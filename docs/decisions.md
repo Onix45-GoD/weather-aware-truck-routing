@@ -358,12 +358,222 @@ Nothing in the assessment requires persistence. `DATABASES` is empty, and
 
 ---
 
+## D16. Cargo weight is never sent to the routing API — *Decision*
+
+**The trap.** The assessment supplies **cargo load weight**. TomTom's
+`vehicleWeight` parameter means **gross vehicle weight** — tractor plus
+trailer plus cargo. They differ by roughly 30,000 lb for a typical rig.
+
+Passing the cargo figure as `vehicleWeight` would be worse than passing
+nothing: the provider would apply weight restrictions calibrated to a vehicle
+far lighter than the real one, and could route a loaded truck across a bridge
+it is not permitted to cross. Inventing a tare weight to add would be
+fabricating vehicle data we were never given.
+
+**The decision.** The adapter sends `travelMode=truck` and **no
+vehicle-weight, axle, height, length or width parameter at all**. The
+assessment's cargo-weight rules are a *risk-scoring* input and stay in
+`apps/routing/domain/risk.py`, which is where they belong.
+
+**The limitation, stated rather than hidden.** Returned routes respect generic
+truck restrictions but **not** weight-, height-, length- or axle-specific
+ones. Closing that gap requires collecting real vehicle specifications from
+the user — a product decision, not something to paper over with a guess.
+
+**Tested by** `test_cargo_weight_is_never_sent_as_a_vehicle_weight`, which
+asserts none of those parameters appears in the outgoing request.
+
+---
+
+## D17. Open-Meteo `snowfall` is snow depth — *Verified, not assumed*
+
+This was the milestone's explicit acceptance criterion, so it was answered
+with live data rather than documentation.
+
+Two live calls were made on 2026-10-28 for the same location and hours — one
+with default units, one with `precipitation_unit=inch` — and saved as
+`real_snowfall_metric.json` / `real_snowfall_imperial.json`. Fairbanks, AK was
+chosen because its forecast actually contained snow, without which the ratios
+below would prove nothing.
+
+| Finding | Evidence |
+|---|---|
+| Default unit is **cm**; with `precipitation_unit=inch` it is **inch** | `hourly_units.snowfall` in each capture |
+| The inch value is the **same quantity**, converted | `snowfall_cm / snowfall_inch` = 2.50–2.545 across all snowy hours (the spread is the API's 2–3 significant-figure rounding) |
+| `snowfall` is **depth**, not liquid-water equivalent | `snowfall_cm / precipitation_mm` = **exactly 0.700** in every snowy hour — Open-Meteo's fixed 7:1 snow-to-liquid ratio. Liquid equivalent would give 0.1 |
+| The wind unit string is `"mp/h"`, not `"mph"` | `hourly_units.wind_speed_10m` |
+
+**Conclusion.** Requesting `precipitation_unit=inch` returns **inches of snow
+depth per hour** — exactly what the assessment's thresholds mean. **No
+conversion is needed on the happy path.** Had we assumed liquid equivalent,
+snow risk would have been under-reported by a factor of seven.
+
+Conversions are implemented anyway and driven by the `hourly_units` each
+response *declares*, not by what we asked for, so a provider that ignores a
+unit parameter is still handled correctly. An unrecognised unit raises
+`InvalidProviderResponseError` rather than being guessed at.
+
+### D17a. Conversions divide; they never multiply by a reciprocal
+
+Writing the conversion as `value * (1 / 2.54)` gives
+`5.08 * (1/2.54) == 1.9999999999999998`, which classifies as **HIGH** instead
+of **SEVERE**. Writing it as `value / 2.54` gives exactly `2.0`.
+
+The error is one ULP and it lands precisely on the risk thresholds — the one
+place it can change an answer. The unit tables therefore store divisors
+(2.54, 25.4, 1.609344, 0.44704, all exact decimal definitions) and the code
+divides. This was caught by the test suite during this milestone and is now
+guarded by `test_conversion_divides_rather_than_multiplying_a_reciprocal`.
+
+---
+
+## D18. Rain is `rain + showers`, never `precipitation` — *Decision*
+
+Open-Meteo separates `rain` (large-scale) from `showers` (convective), and
+`precipitation` is the total *including snow's liquid equivalent*.
+
+- Using `rain` alone under-reports thunderstorms.
+- Using `precipitation` as the rain rate double-counts snowy hours, scoring
+  the same weather as both snow and rain.
+
+So the adapter requests both components and sums them. Where both are missing
+the result is `None` (UNKNOWN); where only one is missing, the known component
+is used.
+
+---
+
+## D19. Forecast selection: nearest hour, ties round up — *Decision*
+
+`HourlyForecast.sample_at()` picks the nearest available hour. An exact
+half-hour tie resolves to the **later** hour, matching D13's round-half-up
+convention. An instant further than 30 minutes from any available hour is
+outside the forecast horizon and returns `None`, which classifies as UNKNOWN
+rather than silently reusing the last known hour.
+
+Hourly data matched to the nearest hour is still hourly data. Nothing
+downstream presents it as minute-accurate.
+
+---
+
+## D20. Forecasts are associated by index, never by coordinate — *Decision*
+
+Open-Meteo snaps requested coordinates to its model grid: asking for
+`39.74, -104.99` returns `39.746895, -104.987076`. Matching responses back by
+coordinate equality would therefore fail outright, and matching by proximity
+could pair the wrong checkpoint with the wrong forecast — a silent,
+plausible-looking error.
+
+Multi-location responses are a JSON array in request order, so association is
+strictly positional. Both the requested and the resolved coordinate are kept
+on `HourlyForecast` so the discrepancy stays visible.
+
+---
+
+## D21. Coordinate cache precision: 2 decimal places — *Decision*
+
+Near-identical checkpoints are collapsed into one forecast lookup, which is
+what keeps a three-route analysis down to a couple of outbound calls. The
+rounding has to be fine enough that it never merges points the provider would
+have answered differently.
+
+Two decimal places is ~1.1 km of latitude (~0.85 km of longitude at 40°N),
+**finer than Open-Meteo's finest model grid (~2 km)**. One decimal place would
+be ~11 km, which genuinely would merge distinct checkpoints. The value is
+pinned and tested rather than tuned for cache-hit rate.
+
+---
+
+## D22. Synchronous HTTP — *Decision*
+
+The project runs under WSGI with ordinary synchronous DRF views. Going async
+would mean either an ASGI migration or `async_to_sync` bridging throughout.
+
+The benefit would be small: the Open-Meteo adapter collapses every checkpoint
+into one or two bulk calls, so a full analysis is roughly four outbound
+requests. Where genuine parallelism helps — the two independent geocode calls
+— `run_bounded()` provides it with a small thread pool. That is a far smaller
+change, and it keeps `respx` mocking and stack traces simple.
+
+---
+
+## D23. Route de-duplication is deliberately strict — *Decision*
+
+Two routes are merged only when their vertex sets overlap by ≥98% **and**
+their distance and duration agree to within 1%. Requiring both prevents a
+genuinely different alternative that happens to share most of its length — a
+50-mile detour off a 900-mile interstate run — from being discarded.
+
+Losing a real option is worse than showing the driver two similar ones. The
+earlier route always survives, so the provider's ordering and the
+`provider_index` tie-break stay stable.
+
+**Route counts are never padded.** If the provider returns two distinct
+routes, two are returned, with a notice saying so. A third is never invented.
+
+---
+
+## D24. Single-leg routes report no provider timings — *Decision*
+
+`calculateRoute` with no intermediate waypoints returns a **single leg**,
+whose only timing is the route total. Spreading that total across the geometry
+would reproduce the domain's own distance-proportional fallback exactly, while
+labelling it as provider data.
+
+So the adapter returns `segment_durations=None` for single-leg routes and lets
+the domain apply — and report — its documented fallback honestly. With two or
+more legs, the per-leg times are real extra information and are distributed
+across each leg's own segments by distance.
+
+---
+
+## D25. Credentials are scrubbed from third-party logs — *Decision*
+
+The API key travels as a query parameter, so it appears in any log line
+containing the URL. Our own logging redacts it. **httpx's does not**: it logs
+every request at INFO as `HTTP Request: GET https://...?key=SECRET "200 OK"`,
+which would publish the key to any log aggregator the moment INFO is enabled.
+
+`RedactingFilter` is attached to the `httpx` and `httpcore` loggers on import
+of the provider HTTP module — there is no opt-in step to forget. It scrubs
+both the format string and the arguments, including non-string arguments such
+as `httpx.URL`.
+
+Credentials are also excluded from cache keys entirely — dropped, not hashed —
+so a key cannot be recovered from cache storage even in principle, and
+rotating a key does not invalidate the cache.
+
+This was found by a test written to assert the opposite, which is the only
+reason it was found at all.
+
+---
+
+## D26. No real TomTom fixture — *Unresolved limitation*
+
+No TomTom API key was available for this milestone, so every TomTom fixture is
+**synthetic**, modelled on the documented response schema. The adapter is
+verified against documentation, not against observed output.
+
+Before relying on this in production, one live call should be recorded with
+`TOMTOM_API_KEY=... pytest -m live` and saved as a `real_*.json` fixture. Until
+that happens the limitation stands and is not claimed to be resolved.
+
+---
+
 ## Open items for later milestones
+
+### Closed in Milestone 2
+
+| Item | Outcome |
+|---|---|
+| Verify `snowfall` unit under an imperial request | ✅ **Resolved — D17.** Verified against live responses, not documentation: `snowfall` is snow depth, and `precipitation_unit=inch` returns inches of depth. No conversion needed on the happy path. |
+| Fewer than three alternatives returned | ✅ **Resolved — D23.** What exists is returned with an explicit notice; counts are never padded. A synthesised avoid-tolls variant remains a possible future enhancement, not a requirement. |
+| Forecast-time matching | ✅ **Resolved — D19.** Nearest hour, ties round up, out-of-horizon returns UNKNOWN. |
+
+### Still open
 
 | Item | Milestone | Note |
 |---|---|---|
-| Verify `snowfall` unit under an imperial request | 2 | The snow thresholds assume **inches of snow depth**, not liquid equivalent. To be pinned by a provider contract test against a recorded winter fixture, not taken on trust from documentation. |
-| Routing provider credentials | 2 | No key is needed for anything in Milestone 1. |
-| Fewer than three alternatives returned | 2 | Return what exists with an explicit notice; optionally synthesise a third via an avoid-tolls/avoid-motorways variant, de-duplicated by geometry overlap. |
-| Forecast-time matching | 3 | Match each ETA to the **nearest** hour, not the floor — flooring biases forecasts up to 59 minutes early. |
+| Real TomTom fixture | 3 | **D26.** No key was available, so every TomTom fixture is synthetic and the adapter is verified against documentation rather than observed output. One live capture closes it. |
 | Checkpoint count ceiling | 3 | A 2,000-mile route at 10-mile spacing is 200 checkpoints × 3 routes. Cap and auto-coarsen with a notice rather than time out. |
+| Provider attribution in the UI | 6 | Open-Meteo is CC-BY 4.0 and TomTom requires attribution; both need a visible credit once there is a UI to put it in. |
+| Fixture-mode labelling in the UI | 6 | When the offline providers are active the interface must say so, so synthetic weather is never mistaken for a forecast. |

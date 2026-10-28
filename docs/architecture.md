@@ -48,9 +48,36 @@
                           (truck + alternatives)    (hourly forecast)
 ```
 
-**Legend:** `domain/` exists today (Milestone 1). `providers/`, `services/`
-and `api/` beyond the health probe arrive in Milestones 2–3; the frontend
-features in Milestones 4–6.
+**Legend:** `domain/` (Milestone 1) and `providers/` (Milestone 2) exist today.
+`services/` and `api/` beyond the health probe arrive in Milestone 3; the
+frontend features in Milestones 4–6.
+
+## Provider modules
+
+| Module | Responsibility |
+|---|---|
+| `base.py` | Protocols (`GeocodingProvider`, `RoutingProvider`, `WeatherProvider`) and the typed results they return. `HourlyForecast.sample_at()` holds the documented nearest-hour selection policy. |
+| `errors.py` | Typed error hierarchy, each with a stable `code`. Catching `ProviderError` degrades gracefully without enumerating vendor internals. |
+| `http.py` | One shared transport: explicit connect/read timeouts, a bounded retry policy, response caching, and credential redaction — including a logging filter that scrubs httpx's own INFO lines. |
+| `tomtom.py` | Geocoding (Search v2) and truck routing (Routing v1), with route de-duplication. |
+| `openmeteo.py` | Bulk hourly forecasts, unit normalisation driven by the response's own metadata, coordinate de-duplication and chunking. |
+| `fixtures.py` | Deterministic offline providers, so the app runs and the suite passes with no key and no network. |
+| `factory.py` | Turns settings into concrete adapters; reports credential *presence* without exposing values. |
+
+### Rules the provider layer follows
+
+- **Adapters translate, they do not decide.** No risk classification, no
+  mileage aggregation, no ranking — that logic lives in `domain/` and two
+  copies would drift. Enforced by an AST test.
+- **Failures are typed.** No bare `httpx` exception escapes; every failure
+  mode maps to a `ProviderError` subclass the API layer can render.
+- **Transient vs permanent is explicit.** 429 and 5xx are retried with capped
+  exponential backoff honouring `Retry-After`; 400/401/403 are not, because
+  retrying them only burns quota.
+- **Credentials never appear** in a log line, an exception, a `repr`, or a
+  cache key.
+- **Counts are never padded.** Two routes are reported as two, with a notice.
+- **Missing data is never zero.** A `None` reading classifies as UNKNOWN.
 
 ## The dependency rule
 

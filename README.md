@@ -16,7 +16,7 @@ option.
 | Milestone | Scope | State |
 |---|---|---|
 | **1** | Repository foundation + deterministic domain core | ✅ **Complete** |
-| 2 | Provider adapters (routing, geocoding, weather) | Not started |
+| **2** | Provider adapters (routing, geocoding, weather) | ✅ **Complete** |
 | 3 | Orchestration + `/api/v1/analyze` endpoint | Not started |
 | 4 | Frontend shell + interactive map | Not started |
 | 5 | Route comparison panel + recommendation UX | Not started |
@@ -25,10 +25,16 @@ option.
 | 8 | Deployment + walkthrough | Not started |
 | 9 | *Optional:* AI route rationale | Not started |
 
-Milestone 1 delivers the scoring engine the assessment weights most heavily —
+Milestone 1 delivered the scoring engine the assessment weights most heavily —
 risk classification, segment-mile aggregation and route ranking — as a pure,
-fully tested Python package with **no external dependencies at all**. No API
-key is required to run or test anything in this repository today.
+fully tested Python package with **no external dependencies at all**.
+
+Milestone 2 adds the provider layer: TomTom geocoding and truck routing,
+Open-Meteo hourly forecasts, and deterministic offline fixture providers.
+
+**No API key is required to run or test anything in this repository.** The
+defaults are the offline fixture providers plus Open-Meteo (which needs no
+key), and the entire test suite runs with no network access.
 
 ---
 
@@ -84,8 +90,15 @@ Neither command needs an API key, a database or a network connection.
 │     │  ├─ risk.py            thresholds, cargo overrides, combination
 │     │  ├─ aggregation.py     segment attribution, risk miles, coverage
 │     │  └─ ranking.py         deterministic comparator + No Travel policy
+│     ├─ providers/         ← ALL external I/O
+│     │  ├─ base.py            protocols + typed results
+│     │  ├─ errors.py          typed provider errors
+│     │  ├─ http.py            timeouts, retries, caching, redaction
+│     │  ├─ tomtom.py          geocoding + truck routing
+│     │  ├─ openmeteo.py       hourly forecasts
+│     │  ├─ fixtures.py        deterministic offline providers
+│     │  └─ factory.py         selection from settings
 │     ├─ api/               DRF serializers and views      (Milestone 3)
-│     ├─ providers/         routing / geocoding / weather  (Milestone 2)
 │     ├─ services/          orchestration                  (Milestone 3)
 │     └─ tests/             pytest suite (domain + api)
 ├─ frontend/
@@ -143,18 +156,66 @@ cd backend
 pytest --cov --cov-report=term-missing
 ```
 
-263 tests, **100% statement and branch coverage of the domain package**. Every
-test uses synthetic inputs: none requires an API key, network access or a live
-external service.
+559 tests, **100% statement coverage of the domain and provider packages**
+(one unreachable branch arc remains, marked and explained in the code). No
+test requires an API key, network access or a live service: every provider
+interaction is mocked with `respx`, and every payload comes from
+`tests/fixtures`.
 
-Coverage is measured over `apps/routing/domain` only — the part that holds the
-logic worth proving. Measuring the Django scaffolding alongside it would
-inflate the number without adding confidence.
+Coverage is measured over `apps/routing/domain` and `apps/routing/providers` —
+the parts that hold the logic worth proving. Measuring the Django scaffolding
+alongside them would inflate the number without adding confidence.
+
+### Live provider checks — opt-in, off by default
+
+```powershell
+cd backend
+pytest -m live                                 # Open-Meteo only; no key needed
+$env:TOMTOM_API_KEY = "..."; pytest -m live    # adds the TomTom checks
+```
+
+These are the only tests that touch the network. `pyproject.toml` sets
+`-m "not live"` by default, so an ordinary `pytest` run can never fire them
+accidentally. Their job is to catch provider drift — a renamed field, a
+changed unit — that mocked tests cannot see by construction.
+
+### Fixture provenance
+
+[`backend/apps/routing/tests/fixtures/PROVENANCE.md`](backend/apps/routing/tests/fixtures/PROVENANCE.md)
+records, for every fixture, whether it is a **genuine captured provider
+response** or **synthetic data**, how it was captured, and what it
+demonstrates. Synthetic data is never presented as real provider output, and
+captured forecasts are never presented as current weather.
+
+---
+
+## Providers
+
+| Concern | Provider | Credentials |
+|---|---|---|
+| Geocoding | TomTom Search v2, or offline fixtures | `TOMTOM_API_KEY` (optional) |
+| Truck routing | TomTom Routing v1, or offline fixtures | `TOMTOM_API_KEY` (optional) |
+| Weather | Open-Meteo hourly forecast | **None required** |
+
+Selected via `ROUTING_PROVIDER`, `GEOCODING_PROVIDER` and `WEATHER_PROVIDER`
+(see [.env.example](.env.example)). All three default to a configuration that
+needs no credentials.
+
+Two provider behaviours are worth knowing about before reading the code; both
+are explained in full in [docs/decisions.md](docs/decisions.md):
+
+- **Cargo weight is never sent to the routing API.** The assessment supplies
+  *cargo load weight*; TomTom's `vehicleWeight` means *gross vehicle weight*.
+  They are not the same number, and conflating them could route a heavy truck
+  over a bridge it must not cross. The limitation this leaves is documented
+  rather than guessed around (D16).
+- **Open-Meteo's `snowfall` is snow depth, not liquid equivalent** — verified
+  against live responses, not assumed (D17).
 
 ---
 
 ## Licence and credits
 
-Built as a take-home assessment. Routing, geocoding and weather providers are
-integrated in Milestone 2; provider terms and attribution requirements are
-recorded in [docs/decisions.md](docs/decisions.md).
+Built as a take-home assessment. Provider terms and attribution requirements
+are recorded in [docs/decisions.md](docs/decisions.md). Weather data by
+[Open-Meteo](https://open-meteo.com/), used under CC-BY 4.0.
