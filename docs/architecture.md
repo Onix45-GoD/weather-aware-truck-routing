@@ -48,9 +48,66 @@
                           (truck + alternatives)    (hourly forecast)
 ```
 
-**Legend:** `domain/` (Milestone 1) and `providers/` (Milestone 2) exist today.
-`services/` and `api/` beyond the health probe arrive in Milestone 3; the
-frontend features in Milestones 4–6.
+**Legend:** `domain/` (M1), `providers/` (M2) and `services/` + `api/` (M3)
+all exist today. The frontend features arrive in Milestones 4–6.
+
+## Orchestration and API (Milestone 3)
+
+| Module | Responsibility |
+|---|---|
+| `services/analysis.py` | The whole workflow: geocode → route → checkpoints → weather → risk → rank. Carries values; decides nothing. |
+| `services/errors.py` | `AnalysisError`, `AmbiguousLocationError` — a valid request that cannot yield a trustworthy answer. |
+| `api/serializers.py` | Request validation (including timezone resolution) and response shaping. |
+| `api/errors.py` | Typed error → HTTP status, one envelope for every failure. |
+| `api/views.py` | `RouteAnalysisView`, `HealthView`. Validate, delegate, shape. |
+
+### Request flow
+
+```
+POST /api/v1/route-analysis
+  │
+  ├─ RouteAnalysisRequestSerializer
+  │    ├─ field validation (cheap, local — nothing reaches a provider yet)
+  │    └─ validate(): resolve departure instant
+  │         offset given ............ use it
+  │         naive + IANA zone ....... local wall-clock -> UTC  (DST-aware)
+  │         naive alone ............. 400, never guessed
+  │
+  ├─ analyse_trip(AnalysisRequest)
+  │    ├─ geocode origin + destination    (parallel, bounded thread pool)
+  │    │    └─ confidence policy (D29)
+  │    ├─ routing.routes(...)             one call, up to 3 alternatives
+  │    ├─ per route: generate_checkpoints()      ← domain
+  │    ├─ weather.hourly(all checkpoints)  ONE batched call for every route
+  │    │    └─ forecast.sample_at(eta)      nearest hour, D19
+  │    ├─ per route: assess_route() + summarise_route()   ← domain
+  │    └─ rank_routes()                                    ← domain
+  │
+  └─ serialise_analysis() → ranked routes, warnings, meta
+```
+
+### Why a single weather call
+
+Checkpoints from all three alternatives go into one request. The Open-Meteo
+adapter collapses near-identical coordinates (D21) and chunks to its
+documented limit, so overlapping routes — which share most of their length —
+cost one lookup rather than three.
+
+### What the orchestration layer deliberately does not do
+
+It holds no threshold, no mileage rule and no ranking criterion. Four
+architecture tests fail the build if a risk literal, a sort, or a
+`severe_miles` comparison appears in `services/` or `api/`, and two more
+assert the domain modules are actually imported and used. Two copies of a
+rule drift, and the copy nobody tests is the one that runs in production.
+
+### Degradation
+
+A weather outage does **not** abort the analysis: routes, distances and ETAs
+are still useful, every checkpoint becomes `UNKNOWN`, and the coverage gate
+then prevents any route being recommended on absent data. A routing failure
+*does* propagate — without routes there is nothing to analyse, and an outage
+must stay distinguishable from "no safe route".
 
 ## Provider modules
 

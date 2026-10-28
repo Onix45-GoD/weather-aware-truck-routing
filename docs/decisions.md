@@ -625,6 +625,113 @@ workaround rather than leave it in place forever.
 
 ---
 
+## D28. `forecast_offset_hours` is a departure shift, not the heatmap slider — *Decision*
+
+These are two different features that both involve "0–48 hours", and
+conflating them would produce a control that looks like it works and does
+not.
+
+| | Corridor slider (Milestone 6) | `forecast_offset_hours` (this milestone) |
+|---|---|---|
+| What it is | A display control | A trip input |
+| What it changes | Which hourly frame the heatmap paints | The departure instant |
+| Re-runs the analysis | No — frames are prefetched | **Yes** — routing, ETAs, weather, ranking |
+| Can change the recommendation | **No** | **Yes** |
+| Network cost of moving it | None | One full analysis |
+
+The architecture document and the frontend placeholder both describe the
+slider as a client-side scrubber over prefetched frames, and that is
+preserved unchanged. The request field is the other thing: "what if I leave
+six hours later?" It recomputes everything from
+`departure_at + forecast_offset_hours`, so the answer is a real answer and
+not a recolour.
+
+**Tested by** `TestForecastOffset` in both the service and API suites,
+including `test_offset_can_change_the_recommendation`, which constructs a
+storm that moves between the two options.
+
+A UI must not wire the heatmap slider straight to this field unless it
+intends to re-run the analysis on every drag.
+
+---
+
+## D29. Geocoding confidence policy — *Decision*
+
+Routing from the wrong "Springfield" produces a complete, plausible and
+entirely wrong analysis. Nothing downstream would look suspicious, which
+makes it worse than an error.
+
+Two cases, deliberately treated differently:
+
+| Provider says | Action | Why |
+|---|---|---|
+| Confidence **below** `MIN_GEOCODE_CONFIDENCE` (default 0.5) | **Reject** with `LOCATION_AMBIGUOUS` (HTTP 400), naming the field | The provider told us it is unsure; proceeding would bury that |
+| **No** confidence reported | Proceed, with a `GEOCODE_CONFIDENCE_UNKNOWN` warning | Absent evidence is not strong evidence (the D27 lesson), but rejecting would break every provider that does not report one |
+
+The floor is a setting, not a constant, so it can be tuned without a code
+change.
+
+---
+
+## D30. Departure time accepts a named timezone — *Decision*
+
+A driver thinks "I leave at six", not "I leave at 13:00Z". Requiring the
+client to send a UTC offset pushes the daylight-saving problem onto the
+client, which is exactly where it goes wrong.
+
+`America/Denver` is **-06:00 on 2026-11-01 and -07:00 on 2026-11-02** — DST
+ends between them. A client computing "my offset" from today's date is an
+hour out for any trip across that boundary, and so is every checkpoint
+forecast and potentially the recommendation.
+
+**The contract** — three shapes, one of them rejected:
+
+| Input | Result |
+|---|---|
+| `departure_at` with an offset | That is the instant. `departure_timezone` is then display-only |
+| naive `departure_at` + `departure_timezone` | Read as local wall-clock time in that zone |
+| naive `departure_at` alone | **400.** Guessing a zone would move the trip by hours |
+
+DRF would otherwise have done the guessing itself: with `USE_TZ = True` it
+*localises* a naive timestamp into the server's zone rather than rejecting
+it. `TripDateTimeField` parses the raw value and preserves naivety so
+`validate()` can decide, rather than inheriting a silent default.
+
+### The two daylight-saving edges
+
+Twice a year a wall-clock time is either ambiguous or impossible, and
+`zoneinfo` resolves both silently.
+
+* **Ambiguous** (clocks go back): `2026-11-01 01:30` happens twice in Denver.
+  The **earlier** occurrence is used — the safer reading for a departure —
+  and an `AMBIGUOUS_LOCAL_TIME` warning says so.
+* **Nonexistent** (clocks go forward): `2026-03-08 02:30` never happens.
+  The time shifts to `03:30` local with a `NONEXISTENT_LOCAL_TIME` warning.
+
+**Order matters in the implementation.** PEP 495's `fold` yields two
+different offsets for *both* transitions, so comparing folds cannot tell them
+apart — an early version mislabelled the spring-forward gap as ambiguous. The
+round-trip test distinguishes them: a wall time that exists survives
+`local -> UTC -> local`, and one that does not gets moved.
+
+### What stays in UTC
+
+Every timestamp on the wire is UTC. The response adds
+`departure_timezone`, `departure_at_local`, `effective_departure_at_local`
+and per-route `arrival_at_local` as *echoes*, so a driver can confirm their
+input was read correctly. Checkpoint ETAs are **not** duplicated in local
+form — that would roughly double the payload for something a client
+reconstructs from the UTC value plus the zone name.
+
+Browsers can populate a picker from `Intl.supportedValuesOf('timeZone')`, so
+no endpoint lists zones.
+
+**Tested by** `test_timezones.py` (24 tests), including six zones end to end,
+both DST edges, and `test_the_same_instant_expressed_two_ways_analyses_identically`
+— a timezone labels an instant, so it must never change a result.
+
+---
+
 ## Open items for later milestones
 
 ### Closed in Milestone 2

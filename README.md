@@ -17,7 +17,7 @@ option.
 |---|---|---|
 | **1** | Repository foundation + deterministic domain core | ✅ **Complete** |
 | **2** | Provider adapters (routing, geocoding, weather) | ✅ **Complete** |
-| 3 | Orchestration + `/api/v1/analyze` endpoint | Not started |
+| **3** | Orchestration + `/api/v1/route-analysis` endpoint | ✅ **Complete** |
 | 4 | Frontend shell + interactive map | Not started |
 | 5 | Route comparison panel + recommendation UX | Not started |
 | 6 | Corridor heatmap + 0–48 h forecast slider | Not started |
@@ -29,8 +29,12 @@ Milestone 1 delivered the scoring engine the assessment weights most heavily —
 risk classification, segment-mile aggregation and route ranking — as a pure,
 fully tested Python package with **no external dependencies at all**.
 
-Milestone 2 adds the provider layer: TomTom geocoding and truck routing,
+Milestone 2 added the provider layer: TomTom geocoding and truck routing,
 Open-Meteo hourly forecasts, and deterministic offline fixture providers.
+
+Milestone 3 adds the REST API and the orchestration service that joins them:
+`POST /api/v1/route-analysis` runs the whole workflow and returns a ranked,
+explainable result.
 
 **No API key is required to run or test anything in this repository.** The
 defaults are the offline fixture providers plus Open-Meteo (which needs no
@@ -54,9 +58,34 @@ pytest --cov --cov-report=term-missing
 # Django system checks
 python manage.py check
 
-# Development server (health probe only in Milestone 1)
+# Development server
 python manage.py runserver
 # -> http://127.0.0.1:8000/api/v1/health
+```
+
+Try the endpoint (PowerShell):
+
+```powershell
+$body = @{
+  origin = "Denver, CO"; destination = "Chicago, IL"
+  departure_at = "2026-11-02T06:00:00"; departure_timezone = "America/Denver"
+  load_weight_lb = 42000; checkpoint_interval_miles = 50
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri http://127.0.0.1:8000/api/v1/route-analysis `
+  -Method Post -Body $body -ContentType "application/json"
+```
+
+This works with **no credentials**: the defaults are the offline fixture
+providers for geocoding and routing, plus Open-Meteo for weather (no key).
+To use real TomTom routing, set `TOMTOM_API_KEY` and switch the providers —
+see [.env.example](.env.example):
+
+```powershell
+$env:TOMTOM_API_KEY  = "..."
+$env:ROUTING_PROVIDER = "tomtom"
+$env:GEOCODING_PROVIDER = "tomtom"
+python manage.py runserver
 ```
 
 ### Frontend
@@ -73,6 +102,161 @@ npm run build        # production build
 ```
 
 Neither command needs an API key, a database or a network connection.
+
+---
+
+## API
+
+Two endpoints. No authentication, no accounts, no database — the service is
+stateless, and two identical requests produce identical output.
+
+### `GET /api/v1/health`
+
+Liveness, plus which providers are configured. Reports whether a credential is
+*present*, never any part of its value.
+
+### `POST /api/v1/route-analysis`
+
+```jsonc
+{
+  "origin": "Denver, CO",
+  "destination": "Chicago, IL",
+
+  // Either an explicit offset...
+  "departure_at": "2026-11-02T06:00:00-07:00",
+
+  // ...or local wall-clock time plus an IANA zone (preferred: it carries
+  // the daylight-saving rules, which a fixed offset cannot).
+  // "departure_at": "2026-11-02T06:00:00",
+  // "departure_timezone": "America/Denver",
+
+  "load_weight_lb": 42000,           // cargo weight, NOT gross vehicle weight
+  "checkpoint_interval_miles": 50,   // 10 | 25 | 50
+  "forecast_offset_hours": 0         // optional, 0–48: leave this much later
+}
+```
+
+**On timezones.** A naive `departure_at` without `departure_timezone` is
+rejected rather than guessed — see [D30](docs/decisions.md). Denver is
+`-06:00` on 2026‑11‑01 and `-07:00` on 2026‑11‑02, so a client-computed
+offset is an hour out across that boundary and every forecast with it. Send
+the zone name and let the server resolve it. Ambiguous and nonexistent local
+times (the two DST edges) are resolved to a documented choice and flagged in
+`warnings`.
+
+**On `forecast_offset_hours`.** This shifts the *departure*, re-running
+routing, ETAs, weather and ranking — it can change the recommendation. It is
+**not** the 0–48 h corridor heatmap slider, which is a client-side display
+control arriving in Milestone 6. See [D28](docs/decisions.md).
+
+#### Response shape
+
+```jsonc
+{
+  "request":   { /* normalised inputs + effective_departure_at (+ _local echoes) */ },
+  "origin":    { "label": "...", "latitude": 39.7, "longitude": -105.0, "confidence": 1.0 },
+  "destination": { /* same */ },
+
+  "recommended_route_id": "tomtom-0",   // null when no route is eligible
+  "recommendation_reason": "…has the fewest Severe miles.",
+
+  "routes": [                            // ranked; ineligible ones included
+    {
+      "route_id": "tomtom-0",
+      "rank": 1,
+      "is_recommended": true,
+      "eligible": true,
+      "ineligibility_reasons": [],
+      "summary": { "distance_miles": 1004.2, "duration_seconds": 50066,
+                   "arrival_at": "…", "eta_source": "distance_proportional" },
+      "metrics": { "severe_miles": 0.0, "high_miles": 12.5, "average_risk": 0.61,
+                   "no_travel_miles": 0.0, "unknown_miles": 0.0,
+                   "coverage_pct": 100.0, "blocked": false },
+      "geometry": [[39.74, -104.99], …],       // simplified for display
+      "geometry_detail": { "returned_points": 1425, "source_points": 10759 },
+      "checkpoints": [ { "eta": "…", "weather": {…}, "risk": {…} } ]
+    }
+  ],
+  "warnings": [ { "code": "ETA_ESTIMATED", "message": "…", "route_id": "…" } ],
+  "meta": { "providers": {…}, "risk_levels": [...], "elapsed_ms": 412.0 }
+}
+```
+
+Every timestamp is UTC with an explicit offset. Risk levels are a fixed enum
+(`LOW` · `MODERATE` · `HIGH` · `SEVERE` · `NO_TRAVEL` · `UNKNOWN`), echoed in
+`meta.risk_levels`.
+
+**Geometry is simplified for the wire.** Three real TomTom routes carry
+~39,000 vertices (~1 MB of JSON); Ramer–Douglas–Peucker at an ~8 m tolerance
+reduces that to ~5,400 points (138 KB) with 0.015% length error.
+`geometry_detail` reports both counts. **Analysis always runs on the full
+geometry** — only the payload is reduced.
+
+#### Errors
+
+One envelope for every failure:
+
+```jsonc
+{ "error": { "code": "LOCATION_AMBIGUOUS", "message": "…",
+             "field": "origin", "details": null } }
+```
+
+| Situation | Status | Code |
+|---|---|---|
+| Invalid request body | 400 | `INVALID_REQUEST` (+ per-field `details`) |
+| Address matched nothing | 400 | `GEOCODING_NO_RESULTS` |
+| Address matched, but not confidently | 400 | `LOCATION_AMBIGUOUS` |
+| No route exists between the points | 422 | `ROUTING_NO_ROUTES` |
+| Provider rate-limited us | 429 | `PROVIDER_RATE_LIMITED` (+ `Retry-After`) |
+| Provider timed out | 504 | `PROVIDER_TIMEOUT` |
+| Provider down / bad response | 502 | `PROVIDER_UNAVAILABLE`, `PROVIDER_INVALID_RESPONSE` |
+| Anything unexpected | 500 | `INTERNAL_ERROR` (no internals leaked) |
+
+**A trip with no safe route is HTTP 200**, not an error: `recommended_route_id`
+is `null`, `recommendation_reason` explains why, and every blocked route is
+still returned with its `ineligibility_reasons`. Returning 5xx would make a
+blizzard indistinguishable from an outage.
+
+---
+
+## How the analysis works
+
+```
+geocode → route alternatives → checkpoints → weather → risk → rank
+```
+
+1. **Geocode** both endpoints in parallel, then apply the confidence policy (D29).
+2. **Route**: one truck-mode call for up to three alternatives. Cargo weight is
+   never sent as a vehicle weight (D16).
+3. **Checkpoints** at the requested interval, placed by cumulative distance.
+   A route long enough to exceed 300 checkpoints has its interval coarsened,
+   with a warning, rather than timing out.
+4. **Weather**: one batched request covering every checkpoint on every route.
+   Near-identical coordinates collapse into a single lookup, so overlapping
+   alternatives cost one call, not three. Each checkpoint takes the forecast
+   nearest its own ETA (D19).
+5. **Risk and ranking** are computed entirely by the domain package. The
+   orchestration layer contains no threshold and no ranking rule; architecture
+   tests fail the build if that changes.
+
+### Known limitations — stated plainly
+
+- **ETAs are driving time only.** No hours-of-service breaks, no fuel or rest
+  stops, no dispatch scheduling. Where the provider gives no per-segment
+  timings (every single-leg route — i.e. all of them today), ETAs assume a
+  constant average speed and say so via `eta_source` and an `ETA_ESTIMATED`
+  warning.
+- **Traffic is requested from the routing provider but not modelled by us.**
+  Departure-time traffic is whatever the provider returned at analysis time.
+- **Forecasts are hourly.** Matching an ETA to the nearest hour does not make
+  it minute-accurate, and nothing here presents it as such.
+- **Missing weather is never treated as good weather.** It becomes `UNKNOWN`,
+  is tracked as `unknown_miles`, excluded from the risk average, and reported
+  as `coverage_pct`. A route whose coverage falls below the threshold is
+  **ineligible** — ignorance cannot win a recommendation.
+- **No Travel conditions block a route entirely.** It is still returned and
+  drawn, with reasons, but never recommended while an eligible route exists.
+  If every route is blocked, the recommendation is `null`.
 
 ---
 
@@ -98,8 +282,8 @@ Neither command needs an API key, a database or a network connection.
 │     │  ├─ openmeteo.py       hourly forecasts
 │     │  ├─ fixtures.py        deterministic offline providers
 │     │  └─ factory.py         selection from settings
-│     ├─ api/               DRF serializers and views      (Milestone 3)
-│     ├─ services/          orchestration                  (Milestone 3)
+│     ├─ services/          analysis.py · errors.py
+│     ├─ api/               serializers · views · errors · urls
 │     └─ tests/             pytest suite (domain + api)
 ├─ frontend/
 │  └─ src/
@@ -156,15 +340,14 @@ cd backend
 pytest --cov --cov-report=term-missing
 ```
 
-559 tests, **100% statement coverage of the domain and provider packages**
-(one unreachable branch arc remains, marked and explained in the code). No
-test requires an API key, network access or a live service: every provider
-interaction is mocked with `respx`, and every payload comes from
-`tests/fixtures`.
+789 tests, **100% statement coverage of the domain, provider, service and
+API packages** (one unreachable branch arc remains, marked and explained in
+the code). No test requires an API key, network access or a live service:
+every provider interaction is mocked with `respx`, and every payload comes
+from `tests/fixtures`.
 
-Coverage is measured over `apps/routing/domain` and `apps/routing/providers` —
-the parts that hold the logic worth proving. Measuring the Django scaffolding
-alongside them would inflate the number without adding confidence.
+The API tests force the offline fixture providers, and one of them asserts
+that a full analysis makes **zero outbound HTTP requests**.
 
 ### Live provider checks — opt-in, off by default
 
