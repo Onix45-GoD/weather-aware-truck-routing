@@ -1,0 +1,26 @@
+{
+  "captured_at_utc": "2026-10-28T16:03:21+00:00",
+  "captured_by": "backend/scripts/capture_tomtom_fixtures.py",
+  "credentials_in_fixtures": "none (response bodies only; key never stored)",
+  "requests": {
+    "real_geocode_denver.json": {
+      "endpoint": "GET https://api.tomtom.com/search/2/geocode/{query}.json",
+      "query": "Denver, CO",
+      "url_redacted": "https://api.tomtom.com/search/2/geocode/Denver%2C%20CO.json?key=***&limit=1",
+      "purpose": "successful geocoding response"
+    },
+    "real_route_denver_chicago.json": {
+      "endpoint": "GET https://api.tomtom.com/routing/1/calculateRoute/{locations}/json",
+      "origin": "39.7392,-104.9903 (Denver, CO)",
+      "destination": "41.8781,-87.6298 (Chicago, IL)",
+      "travelMode": "truck",
+      "maxAlternatives": 2,
+      "departAt": "2026-10-28T18:00:00+00:00",
+      "url_redacted": "https://api.tomtom.com/routing/1/calculateRoute/39.739200,-104.990300:41.878100,-87.629800/json?key=***&travelMode=truck&maxAlternatives=2&alternativeType=anyRoute&routeRepresentation=polyline&traffic=true&departAt=2026-10-28T18%3A00%3A00%2B00%3A00",
+      "purpose": "truck routing with alternatives",
+      "vehicle_parameters_sent": "none - cargo weight is never sent as vehicleWeight (D16)",
+      "distinct_routes_returned": 3,
+      "routes_before_deduplication": 3
+    }
+  }
+}

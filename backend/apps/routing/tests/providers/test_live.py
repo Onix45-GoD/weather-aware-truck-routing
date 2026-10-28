@@ -13,6 +13,19 @@ Run them deliberately:
 Their purpose is to catch provider drift -- a renamed field, a changed unit --
 that mocked tests cannot see by construction. They assert contract shape, not
 specific weather values, because real forecasts change by the hour.
+
+**These tests are not deterministic, by nature.** They depend on a third-party
+service being reachable and responsive. One transient failure was observed
+during Milestone 2 verification: a run took 60 s and
+``test_returns_a_usable_hourly_series`` failed, while the same test passed in
+isolation immediately afterwards and the full live suite passed on the next
+run. The duration is consistent with read timeouts and the retry policy, but
+the error text was not captured, so the exact cause is unconfirmed.
+
+A single failure here therefore means "retry, and check whether the service is
+up" -- not "the adapter is broken". Treat a *reproducible* failure as drift
+worth investigating. This non-determinism is also why these tests are excluded
+from the default run rather than merely being slow.
 """
 
 from __future__ import annotations
