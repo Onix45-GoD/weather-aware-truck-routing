@@ -2,7 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from '@/App'
-import '@/index.css'
+import { Providers } from '@/app/Providers'
+import '@/styles/index.css'
 
 const container = document.getElementById('root')
 if (!container) {
@@ -11,6 +12,8 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <Providers>
+      <App />
+    </Providers>
   </StrictMode>,
 )

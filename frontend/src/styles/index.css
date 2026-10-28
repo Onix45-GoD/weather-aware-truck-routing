@@ -1,0 +1,100 @@
+/* Global stylesheet: Tailwind v4 integration, design tokens, resets.
+ *
+ * MapLibre styling lives in `styles/map.css`, imported by the map component,
+ * so vendor CSS stays out of the global cascade.
+ */
+
+/* The layer order is the whole trick to making Tailwind and MUI coexist.
+ * Declaring it FIRST fixes precedence regardless of import order: anything in
+ * `utilities` (Tailwind) outranks anything in `mui`, so a Tailwind class can
+ * override a themed MUI style without `!important`.
+ *
+ * MUI is only placed in the `mui` layer because `StyledEngineProvider
+ * enableCssLayer` is set in the provider tree — see `app/Providers.tsx`.
+ * Without that flag MUI emits unlayered styles, which beat *all* layers. */
+@layer theme, base, mui, components, utilities;
+
+@import 'tailwindcss';
+
+/* Tailwind v4 configuration is CSS-native: no tailwind.config.js, no PostCSS.
+ * These tokens generate utilities (`bg-app`, `text-muted`, `border-hairline`)
+ * and are the same values the MUI theme uses, declared once. */
+@theme {
+  --color-app: #08111f;
+  --color-panel: #111c2d;
+  --color-elevated: #1a2a40;
+  --color-hairline: #29384d;
+
+  --color-ink: #f1f5f9;
+  --color-muted: #94a3b8;
+
+  --color-risk-low: #22c55e;
+  --color-risk-moderate: #f59e0b;
+  --color-risk-high: #f97316;
+  --color-risk-severe: #ef4444;
+  --color-risk-no-travel: #a855f7;
+  --color-risk-unknown: #64748b;
+
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-app);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Tabular figures so distances and times line up in columns. */
+    font-feature-settings: 'tnum' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A visible focus ring everywhere, including for mouse users who tab away
+   * mid-interaction. MUI handles its own; this covers everything else. */
+  :focus-visible {
+    outline: 2px solid var(--color-risk-low);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #233146;
+    border-radius: 8px;
+    border: 2px solid var(--color-app);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* One scroll container rule, reused by every panel that can overflow.
+   * `min-height: 0` is what stops a grid child from refusing to shrink and
+   * pushing the whole layout into horizontal overflow. */
+  .scroll-area {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

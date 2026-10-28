@@ -1,0 +1,59 @@
+/* MapLibre overrides, kept out of the global stylesheet so vendor CSS stays
+ * contained. Only appearance is touched here; layout belongs to Tailwind. */
+
+.maplibregl-ctrl-group {
+  background: #111c2d;
+  border: 1px solid #29384d;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.maplibregl-ctrl-group button {
+  background: transparent;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid #29384d;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: #1a2a40;
+}
+
+.maplibregl-ctrl-group button span {
+  filter: invert(1) brightness(1.6);
+}
+
+/* Attribution is a condition of using the free basemap tiles. It is restyled
+ * for contrast, never hidden. */
+.maplibregl-ctrl-attrib {
+  background: rgba(17, 28, 45, 0.85);
+  color: #94a3b8;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: #94a3b8;
+}
+
+.maplibregl-ctrl-scale {
+  background: rgba(17, 28, 45, 0.85);
+  border-color: #29384d;
+  color: #94a3b8;
+  border-radius: 4px;
+}
+
+.maplibregl-popup-content {
+  background: #111c2d;
+  border: 1px solid #29384d;
+  border-radius: 10px;
+  color: #f1f5f9;
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: #111c2d;
+  border-bottom-color: #111c2d;
+}

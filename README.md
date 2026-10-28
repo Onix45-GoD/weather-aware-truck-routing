@@ -18,8 +18,8 @@ option.
 | **1** | Repository foundation + deterministic domain core | ✅ **Complete** |
 | **2** | Provider adapters (routing, geocoding, weather) | ✅ **Complete** |
 | **3** | Orchestration + `/api/v1/route-analysis` endpoint | ✅ **Complete** |
-| 4 | Frontend shell + interactive map | Not started |
-| 5 | Route comparison panel + recommendation UX | Not started |
+| **4** | Frontend dashboard: map, routes, checkpoints | ✅ **Complete** |
+| 5 | Route comparison polish + onboarding | Not started |
 | 6 | Corridor heatmap + 0–48 h forecast slider | Not started |
 | 7 | Hardening (failure paths, a11y, performance) | Not started |
 | 8 | Deployment + walkthrough | Not started |
@@ -32,9 +32,13 @@ fully tested Python package with **no external dependencies at all**.
 Milestone 2 added the provider layer: TomTom geocoding and truck routing,
 Open-Meteo hourly forecasts, and deterministic offline fixture providers.
 
-Milestone 3 adds the REST API and the orchestration service that joins them:
+Milestone 3 added the REST API and the orchestration service that joins them:
 `POST /api/v1/route-analysis` runs the whole workflow and returns a ranked,
 explainable result.
+
+Milestone 4 adds the React dashboard: an interactive MapLibre map with
+risk-coloured routes, route comparison cards, a checkpoint table and detail
+panel, and a weather profile — all driven by real analysis results.
 
 **No API key is required to run or test anything in this repository.** The
 defaults are the offline fixture providers plus Open-Meteo (which needs no
@@ -98,10 +102,44 @@ npm run dev          # development server on http://localhost:5173
 npm test             # Vitest, single run
 npm run test:watch   # Vitest, watch mode
 npm run typecheck    # TypeScript, no emit
+npm run lint         # oxlint
 npm run build        # production build
 ```
 
-Neither command needs an API key, a database or a network connection.
+The frontend tests need no API key, database or network connection — the API
+client and MapLibre are both mocked.
+
+### Running the whole thing
+
+Two terminals. The backend serves the API; the frontend talks only to it.
+
+```powershell
+# Terminal 1
+cd backend; .\.venv\Scripts\Activate.ps1; python manage.py runserver
+# Terminal 2
+cd frontend; npm run dev        # http://localhost:5173
+```
+
+With no configuration this uses the offline fixture providers plus Open-Meteo.
+For real TomTom routing, put your key in `backend/.env` (gitignored):
+
+```ini
+TOMTOM_API_KEY=your-key-here
+ROUTING_PROVIDER=tomtom
+GEOCODING_PROVIDER=tomtom
+```
+
+### Frontend environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Django API origin |
+| `VITE_MAP_STYLE_URL` | CARTO dark-matter | MapLibre basemap style |
+
+⚠️ **Never put a provider credential in a `VITE_*` variable.** They are
+compiled into the JavaScript bundle and are readable by anyone who opens the
+site. TomTom and Open-Meteo are called by the Django server, never by the
+browser — a test asserts the frontend request carries no credential.
 
 ---
 
@@ -260,6 +298,77 @@ geocode → route alternatives → checkpoints → weather → risk → rank
 
 ---
 
+## Frontend
+
+A dark dashboard built with **React 19 · TypeScript · Vite 8 · Tailwind CSS 4
+· Material UI 9 · MapLibre GL 6**.
+
+### How Tailwind and MUI coexist
+
+The two are given separate jobs, so they never fight over the same property:
+
+| | Owns |
+|---|---|
+| **Tailwind** | Layout — grid, flex, spacing, sizing, breakpoints, overflow |
+| **MUI** | Appearance — colours, radii, typography, component states |
+
+The glue is CSS cascade layers. `src/styles/index.css` declares the order up
+front:
+
+```css
+@layer theme, base, mui, components, utilities;
+```
+
+and `StyledEngineProvider enableCssLayer` puts MUI's styles into the `mui`
+layer. Because `utilities` is declared after `mui`, a Tailwind class beats a
+themed MUI style **without `!important`** — which is the usual, miserable
+alternative. Tailwind v4 needs no `tailwind.config.js`: tokens live in
+`@theme` in that same stylesheet, and they are the same values the MUI theme
+uses.
+
+### Responsive behaviour
+
+| Viewport | Layout |
+|---|---|
+| **≥1280 px** | Three columns: trip form · map · route alternatives |
+| **1024–1280 px** | Trip form and map side by side; alternatives drop below |
+| **<1024 px** | Single column; trip form moves into a drawer behind a **Trip** button; the map keeps full width |
+
+Grid children use `minmax(0, 1fr)` and `min-w-0` throughout. Without those a
+long route label or a wide table forces horizontal overflow on the whole
+page — a grid item's default `min-width: auto` refuses to shrink below its
+content.
+
+### Map
+
+MapLibre GL with a keyless CARTO dark basemap (attribution is shown, as its
+terms require). The map is **code-split**: it is ~1 MB of the bundle, and
+making the first paint wait for it would block the trip form, which is the
+only thing a user can act on before an analysis exists.
+
+- Route geometry comes from the API — never reconstructed from checkpoints.
+- The selected route is coloured per-segment by checkpoint risk, using
+  forward attribution: a checkpoint governs the road *ahead* of it.
+- Unselected alternatives recede; ineligible ones are drawn in the No-Travel
+  colour so "blocked" reads differently from "not chosen".
+- If the basemap fails to load, a banner says so and the rest of the
+  dashboard keeps working.
+
+### What the reference design showed that this does not
+
+The mockups include an **animated weather-radar raster** behind the route.
+That is not implemented, deliberately: there is no radar source in this
+system, and the analysis is *forecast*-based — a trip two days out has no
+radar to show. Painting live radar behind a forecast-driven recommendation
+would imply a correspondence that does not exist.
+
+What is shown instead is real: risk colouring derived from the actual
+checkpoint classifications, and a wind/rain/snow profile plotted from the
+measurements the analysis used. Gaps in that profile are genuine gaps, not
+interpolated.
+
+---
+
 ## Repository layout
 
 ```
@@ -340,14 +449,27 @@ cd backend
 pytest --cov --cov-report=term-missing
 ```
 
-789 tests, **100% statement coverage of the domain, provider, service and
-API packages** (one unreachable branch arc remains, marked and explained in
+**Backend:** 790 tests, **100% statement coverage of the domain, provider,
+service and API packages** (one unreachable branch arc remains, marked and explained in
 the code). No test requires an API key, network access or a live service:
 every provider interaction is mocked with `respx`, and every payload comes
 from `tests/fixtures`.
 
 The API tests force the offline fixture providers, and one of them asserts
-that a full analysis makes **zero outbound HTTP requests**.
+that a full analysis makes **zero outbound HTTP requests**. Another asserts
+the suite never reads a developer's local `.env`, so results are identical on
+a laptop with credentials and on CI without them.
+
+**Frontend:** 85 tests (Vitest + Testing Library), covering form validation
+and timezone serialisation, the request lifecycle including stale-response
+races, one/two/three alternatives, null recommendations, missing weather,
+error mapping, and map lifecycle and failure. The API client and MapLibre are
+mocked; no test touches the network.
+
+```powershell
+cd frontend
+npm test
+```
 
 ### Live provider checks — opt-in, off by default
 
