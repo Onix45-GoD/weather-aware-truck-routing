@@ -1,0 +1,9 @@
+# Pinned for Python 3.14.8. Compatibility verified against PyPI metadata:
+#   Django 6.0.9            -> Python 3.12/3.13/3.14
+#   djangorestframework     -> Python ...3.14 ; Django 5.2/6.0/6.1
+#   pytest-django 4.14.0    -> Python ...3.14 ; Django 5.2/6.0
+# Django is held at 6.0.x (not 6.1.x) because pytest-django 4.14.0 declares
+# support only through Django 6.0.
+Django==6.0.9
+djangorestframework==3.18.3
+django-cors-headers==4.9.0
