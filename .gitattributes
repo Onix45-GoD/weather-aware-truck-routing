@@ -1,0 +1,11 @@
+# Normalise line endings. Development happens on Windows; the build and the
+# deployment target are Linux. Without this, every file churns between CRLF
+# and LF and diffs become unreadable.
+* text=auto eol=lf
+
+# Binary assets must never be normalised.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
