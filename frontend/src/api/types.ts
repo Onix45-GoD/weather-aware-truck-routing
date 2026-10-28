@@ -224,3 +224,70 @@ export interface HealthResponse {
   /** Provider names and credential *presence* flags -- never a value. */
   providers: Record<string, string | boolean | null>
 }
+
+// --- GET /api/v1/checkpoint-weather -----------------------------------------
+
+/** Observed conditions at a point, as of `observed_at`. Imperial units. */
+export interface CurrentConditions {
+  observed_at: string
+  /** Provider's headline word: `Clear`, `Clouds`, `Rain`, `Snow`, ... */
+  condition: string
+  description: string
+  /** OpenWeatherMap icon code, e.g. `10d`. Rendered with bundled icons. */
+  icon: string
+  temp_f: number | null
+  feels_like_f: number | null
+  wind_mph: number | null
+  wind_gust_mph: number | null
+  wind_deg: number | null
+  humidity_pct: number | null
+  pressure_hpa: number | null
+  visibility_miles: number | null
+  cloud_pct: number | null
+  rain_in_last_hour: number | null
+  snow_in_last_hour: number | null
+  sunrise: string | null
+  sunset: string | null
+}
+
+/** One 3-hour forecast step. */
+export interface ForecastSlot {
+  at: string
+  condition: string
+  description: string
+  icon: string
+  temp_f: number | null
+  feels_like_f: number | null
+  /** 0–1, or null when the provider gave none. */
+  precipitation_probability: number | null
+  wind_mph: number | null
+  wind_gust_mph: number | null
+  wind_deg: number | null
+  humidity_pct: number | null
+  cloud_pct: number | null
+  rain_in_3h: number | null
+  snow_in_3h: number | null
+}
+
+export interface CheckpointWeatherQuery {
+  lat: number
+  lon: number
+  /** Aware ISO 8601 — the checkpoint's `eta` as the analysis emitted it. */
+  at?: string | null | undefined
+}
+
+export interface CheckpointWeatherResponse {
+  source: 'openweathermap'
+  coordinate: { latitude: number; longitude: number }
+  place_name: string | null
+  current: CurrentConditions
+  /** Ascending, 3-hourly, about five days. */
+  forecast: ForecastSlot[]
+  eta: string | null
+  /** The slot nearest `eta`, or null when none is within 90 minutes. */
+  at_eta: ForecastSlot | null
+  /** Signed minutes from ETA to `at_eta.at`; positive means the slot is later. */
+  eta_gap_minutes: number | null
+  eta_beyond_horizon: boolean
+  forecast_horizon_end: string | null
+}

@@ -10,6 +10,8 @@ export interface HealthState {
   status: HealthStatus
   /** True when the server holds an OpenWeatherMap key for map overlays. */
   weatherOverlaysAvailable: boolean
+  /** Same key, different feature: detailed conditions for a clicked checkpoint. */
+  weatherDetailAvailable: boolean
 }
 
 /**
@@ -44,6 +46,8 @@ export function useHealth(): HealthState {
     health,
     status,
     weatherOverlaysAvailable:
+      health?.providers['openweathermap_key_configured'] === true,
+    weatherDetailAvailable:
       health?.providers['openweathermap_key_configured'] === true,
   }
 }

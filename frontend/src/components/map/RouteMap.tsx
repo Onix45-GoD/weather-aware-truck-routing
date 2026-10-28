@@ -41,7 +41,6 @@ const SOURCES = {
 
 const LAYERS = {
   weather: 'weather-overlay',
-  routeCasing: 'route-casing',
   routeLine: 'route-line',
   riskLine: 'risk-line',
   checkpointDots: 'checkpoint-dots',
@@ -50,6 +49,13 @@ const LAYERS = {
 } as const
 
 const EMPTY = { type: 'FeatureCollection' as const, features: [] }
+
+/** Pulse timing and radii, in px. Slow and small: noticeable, not busy. */
+const PULSE_PERIOD_MS = 2400
+const PULSE_DOT_MIN = 3.5
+const PULSE_DOT_MAX = 5.5
+const PULSE_RING_MIN = 7
+const PULSE_RING_MAX = 11
 
 /** Narrow `getSource` to a GeoJSON source before writing to it. */
 function setSourceData(map: MapLibreMap, id: string, data: unknown): void {
@@ -170,26 +176,15 @@ function addRouteLayers(map: MapLibreMap): void {
     }
   }
 
-  if (!map.getLayer(LAYERS.routeCasing)) {
-    map.addLayer({
-      id: LAYERS.routeCasing,
-      type: 'line',
-      source: SOURCES.routes,
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': '#060B14',
-        'line-width': ['case', ['get', 'isSelected'], 9, 6],
-        'line-opacity': 0.9,
-      },
-    })
-  }
-
+  // Thin dashed lines: the basemap's roads stay readable underneath, and
+  // the dash reads as "a plan", not a road. Butt caps, because round caps
+  // would bleed into the gaps and turn dashes back into a solid line.
   if (!map.getLayer(LAYERS.routeLine)) {
     map.addLayer({
       id: LAYERS.routeLine,
       type: 'line',
       source: SOURCES.routes,
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
       paint: {
         // Unselected alternatives stay visible but recede. Ineligible ones
         // take the No-Travel colour so "blocked" reads differently from
@@ -202,14 +197,16 @@ function addRouteLayers(map: MapLibreMap): void {
           '#A855F7',
           '#64748B',
         ],
-        'line-width': ['case', ['get', 'isSelected'], 5, 3],
-        'line-opacity': ['case', ['get', 'isSelected'], 0.35, 0.75],
+        'line-width': ['case', ['get', 'isSelected'], 2.5, 1.75],
+        'line-opacity': ['case', ['get', 'isSelected'], 0.5, 0.8],
+        'line-dasharray': [2, 2],
       },
     })
   }
 
   // Risk colouring sits above the plain line and only covers the selected
-  // route -- three routes of risk colour at once is unreadable.
+  // route -- three routes of risk colour at once is unreadable. Dotted:
+  // a zero-length dash with round caps is a row of dots.
   if (!map.getLayer(LAYERS.riskLine)) {
     map.addLayer({
       id: LAYERS.riskLine,
@@ -218,8 +215,9 @@ function addRouteLayers(map: MapLibreMap): void {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': riskColorExpression(),
-        'line-width': 5,
+        'line-width': 3.5,
         'line-opacity': 0.95,
+        'line-dasharray': [0, 2],
       },
     })
   }
@@ -244,11 +242,13 @@ function addRouteLayers(map: MapLibreMap): void {
       type: 'circle',
       source: SOURCES.checkpoints,
       filter: ['==', ['get', 'index'], -1],
+      // Blue, not white: the ring has to read on the light Streets basemap
+      // as well as on Dark. A faint fill keeps it visible over a dense dot.
       paint: {
         'circle-radius': 8,
-        'circle-color': 'rgba(0,0,0,0)',
+        'circle-color': 'rgba(37, 99, 235, 0.18)',
         'circle-stroke-width': 2.5,
-        'circle-stroke-color': '#F1F5F9',
+        'circle-stroke-color': '#2563EB',
       },
     })
   }
@@ -271,7 +271,7 @@ function addRouteLayers(map: MapLibreMap): void {
 /**
  * Replace the weather raster with `overlay`, or remove it when null.
  *
- * The raster goes *under* the route casing so the recommendation is never
+ * The raster goes *under* the route lines so the recommendation is never
  * obscured by a rain cell. Tiles come from our own server, which holds the
  * OpenWeatherMap key -- see `weatherTileUrlTemplate`.
  */
@@ -297,7 +297,7 @@ function setWeatherOverlay(
       source: SOURCES.weather,
       paint: { 'raster-opacity': 0.7 },
     },
-    map.getLayer(LAYERS.routeCasing) ? LAYERS.routeCasing : undefined,
+    map.getLayer(LAYERS.routeLine) ? LAYERS.routeLine : undefined,
   )
 }
 
@@ -490,6 +490,46 @@ export function RouteMap({
     origin,
     destination,
   ])
+
+  // --- pulse ---------------------------------------------------------------
+  // Checkpoints breathe: radius eases up and down on a slow sine so they
+  // read as live markers rather than static dots. One rAF loop writes two
+  // paint properties; MapLibre only repaints when a value changes, and the
+  // loop pauses with the tab because rAF does. Honours reduced-motion.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    if (typeof requestAnimationFrame !== 'function') return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+
+    let frame = 0
+    const started = performance.now()
+    const tick = (now: number) => {
+      const phase = ((now - started) / PULSE_PERIOD_MS) * Math.PI * 2
+      const wave = (Math.sin(phase) + 1) / 2 // 0..1, smooth
+      try {
+        if (map.getLayer(LAYERS.checkpointDots)) {
+          map.setPaintProperty(
+            LAYERS.checkpointDots,
+            'circle-radius',
+            PULSE_DOT_MIN + wave * (PULSE_DOT_MAX - PULSE_DOT_MIN),
+          )
+        }
+        if (map.getLayer(LAYERS.checkpointSelected)) {
+          map.setPaintProperty(
+            LAYERS.checkpointSelected,
+            'circle-radius',
+            PULSE_RING_MIN + wave * (PULSE_RING_MAX - PULSE_RING_MIN),
+          )
+        }
+      } catch {
+        // Style mid-swap; the next style.load restarts this effect.
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [ready, styleGeneration])
 
   // Highlight ring follows the selected checkpoint.
   useEffect(() => {

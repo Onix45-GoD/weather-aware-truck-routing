@@ -19,10 +19,14 @@ from .fixtures import (
     FixtureWeatherProvider,
 )
 from .openmeteo import OpenMeteoWeatherProvider
-from .openweathermap import OpenWeatherMapTileProvider
+from .openweathermap import (
+    OpenWeatherMapConditionsProvider,
+    OpenWeatherMapTileProvider,
+)
 from .tomtom import TomTomGeocodingProvider, TomTomRoutingProvider
 
 __all__ = [
+    "get_conditions_provider",
     "get_geocoding_provider",
     "get_routing_provider",
     "get_weather_provider",
@@ -86,6 +90,27 @@ def get_weather_provider(name: str | None = None) -> WeatherProvider:
     )
 
 
+def _openweathermap_key(feature: str) -> str:
+    key = getattr(settings, "OPENWEATHERMAP_API_KEY", "") or ""
+    if not key.strip():
+        raise ProviderConfigurationError(
+            f"OPENWEATHERMAP_API_KEY is not set, so {feature} is unavailable. "
+            "Route analysis does not depend on it.",
+            provider="openweathermap",
+        )
+    return key
+
+
+def get_conditions_provider() -> OpenWeatherMapConditionsProvider:
+    """Build the per-checkpoint conditions lookup, or explain why not.
+
+    Descriptive weather for a clicked checkpoint. Never an input to the
+    risk engine, so there is no fixture fallback: without a key the
+    endpoint answers 503 and the panel says so.
+    """
+    return OpenWeatherMapConditionsProvider(_openweathermap_key("checkpoint weather"))
+
+
 def get_weather_tile_provider() -> OpenWeatherMapTileProvider:
     """Build the weather-map tile proxy, or explain why it cannot run.
 
@@ -93,14 +118,7 @@ def get_weather_tile_provider() -> OpenWeatherMapTileProvider:
     missing key simply means the overlay toggle stays disabled in the UI.
     Caching is the service's job (`services.weather_tiles`), not the adapter's.
     """
-    key = getattr(settings, "OPENWEATHERMAP_API_KEY", "") or ""
-    if not key.strip():
-        raise ProviderConfigurationError(
-            "OPENWEATHERMAP_API_KEY is not set, so weather map tiles are "
-            "unavailable. Route analysis does not depend on them.",
-            provider="openweathermap",
-        )
-    return OpenWeatherMapTileProvider(key)
+    return OpenWeatherMapTileProvider(_openweathermap_key("weather map tiles"))
 
 
 def provider_status() -> dict[str, Any]:

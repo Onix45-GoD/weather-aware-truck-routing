@@ -20,9 +20,10 @@ import realResponse from './test/real-response.json'
 
 const analyseRoute = vi.hoisted(() => vi.fn())
 const fetchHealth = vi.hoisted(() => vi.fn())
+const fetchCheckpointWeather = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return { ...actual, analyseRoute, fetchHealth }
+  return { ...actual, analyseRoute, fetchHealth, fetchCheckpointWeather }
 })
 
 const real = realResponse as unknown as RouteAnalysisResponse

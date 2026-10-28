@@ -9,8 +9,11 @@ import type { ReactNode } from 'react'
 
 import type { AnalysedRoute, Checkpoint } from '@/api/types'
 import { RiskChip } from '@/components/route/RiskChip'
+import { useCheckpointWeather } from '@/features/checkpoint-weather/useCheckpointWeather'
 import { dateTime, measurement, zoneAbbreviation } from '@/lib/format'
 import { PALETTE } from '@/theme/theme'
+
+import { CheckpointConditions } from './CheckpointConditions'
 
 interface ConditionProps {
   icon: ReactNode
@@ -51,6 +54,8 @@ export interface CheckpointDetailsProps {
   route: AnalysedRoute | null
   checkpoint: Checkpoint | null
   timeZone?: string | null | undefined
+  /** Whether the server can serve detailed conditions (OpenWeatherMap key). */
+  weatherDetailAvailable?: boolean | undefined
 }
 
 /**
@@ -65,7 +70,12 @@ export function CheckpointDetails({
   route,
   checkpoint,
   timeZone,
+  weatherDetailAvailable = false,
 }: CheckpointDetailsProps) {
+  // Hooks before the early return; the hook itself is a no-op when there is
+  // no checkpoint or the feature is off.
+  const detail = useCheckpointWeather(checkpoint, weatherDetailAvailable)
+
   if (!route || !checkpoint) {
     return (
       <Paper className="p-4">
@@ -164,6 +174,13 @@ export function CheckpointDetails({
         </Typography>
         <Typography variant="body2">{checkpoint.risk.explanation}</Typography>
       </div>
+
+      <CheckpointConditions
+        checkpoint={checkpoint}
+        weather={detail}
+        available={weatherDetailAvailable}
+        timeZone={timeZone}
+      />
     </Paper>
   )
 }

@@ -150,13 +150,30 @@ the weather-tile URLs carry a credential.
 
 ## API
 
-Three endpoints. No authentication, no accounts, no database — the service
+Four endpoints. No authentication, no accounts, no database — the service
 is stateless, and two identical requests produce identical output.
 
 ### `GET /api/v1/health`
 
 Liveness, plus which providers are configured. Reports whether a credential is
 *present*, never any part of its value.
+
+### `GET /api/v1/checkpoint-weather?lat=&lon=&at=`
+
+Detailed weather at one checkpoint, for the panel that opens when a driver
+clicks one: observed conditions **now** (temperature, feels-like, sky,
+wind, humidity, pressure, visibility, clouds, last-hour rain/snow) and the
+OpenWeatherMap 5-day / 3-hourly forecast, with the slot nearest the ETA
+picked out as `at_eta` plus the signed `eta_gap_minutes` between them. An
+ETA more than 90 minutes from any slot gets `at_eta: null` rather than a
+stale slot passed off as the arrival forecast; `eta_beyond_horizon` says
+whether that is because the trip is further out than five days. `at` must
+carry a UTC offset — the analysis emits every ETA with one. Cached per
+~1 km cell (10 min observed, 30 min forecast). **Never an input to the
+risk engine**: the levels come from Open-Meteo through the assessment's
+thresholds and are computed before this is called. Without
+`OPENWEATHERMAP_API_KEY` it answers `503 CHECKPOINT_WEATHER_NOT_CONFIGURED`
+and the panel explains instead.
 
 ### `GET /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png`
 
@@ -379,8 +396,17 @@ trip form, which is the only thing a user can act on before an analysis
 exists.
 
 - Route geometry comes from the API — never reconstructed from checkpoints.
-- The selected route is coloured per-segment by checkpoint risk, using
-  forward attribution: a checkpoint governs the road *ahead* of it.
+- Routes are drawn as thin dashed lines so the basemap's roads stay
+  readable underneath; the selected route carries a dotted risk line on
+  top, coloured per-segment by checkpoint risk using forward attribution:
+  a checkpoint governs the road *ahead* of it.
+- Checkpoints pulse gently (one `requestAnimationFrame` loop driving two
+  paint properties; paused with the tab, off under `prefers-reduced-motion`).
+- Clicking a checkpoint opens its panel: the risk inputs from the analysis,
+  the backend's own explanation of the level, and — with an OpenWeatherMap
+  key — observed conditions **now** and the forecast **at ETA**, kept apart
+  and labelled, with a 3-hourly strip around the arrival time and a °F/°C
+  toggle. Icons are bundled; the browser never calls OpenWeatherMap.
 - Unselected alternatives recede; ineligible ones are drawn in the No-Travel
   colour so "blocked" reads differently from "not chosen".
 - If the basemap fails to load, a banner says so and the rest of the
@@ -539,6 +565,7 @@ captured forecasts are never presented as current weather.
 | Truck routing | TomTom Routing v1, or offline fixtures | `TOMTOM_API_KEY` (optional) |
 | Weather | Open-Meteo hourly forecast | **None required** |
 | Map overlays | OpenWeatherMap raster tiles, proxied | `OPENWEATHERMAP_API_KEY` (optional) |
+| Checkpoint detail | OpenWeatherMap current + 5-day/3-hourly, proxied | `OPENWEATHERMAP_API_KEY` (optional) |
 
 Selected via `ROUTING_PROVIDER`, `GEOCODING_PROVIDER` and `WEATHER_PROVIDER`
 (see [.env.example](.env.example)). All three default to a configuration that

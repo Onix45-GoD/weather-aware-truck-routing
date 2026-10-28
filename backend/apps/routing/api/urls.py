@@ -4,13 +4,23 @@ from __future__ import annotations
 
 from django.urls import path
 
-from .views import HealthView, RouteAnalysisView, WeatherTileView
+from .views import (
+    CheckpointWeatherView,
+    HealthView,
+    RouteAnalysisView,
+    WeatherTileView,
+)
 
 app_name = "routing"
 
 urlpatterns = [
     path("health", HealthView.as_view(), name="health"),
     path("route-analysis", RouteAnalysisView.as_view(), name="route-analysis"),
+    path(
+        "checkpoint-weather",
+        CheckpointWeatherView.as_view(),
+        name="checkpoint-weather",
+    ),
     path(
         "weather-tiles/<str:layer>/<int:z>/<int:x>/<int:y>.png",
         WeatherTileView.as_view(),

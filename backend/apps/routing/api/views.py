@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 from apps.routing.providers.errors import ProviderConfigurationError, ProviderError
 from apps.routing.providers.factory import provider_status
 from apps.routing.services.analysis import analyse_trip
+from apps.routing.services.checkpoint_weather import fetch_checkpoint_weather
 from apps.routing.services.errors import AnalysisError
 from apps.routing.services.weather_tiles import (
     WEATHER_TILE_LAYERS,
@@ -25,10 +26,19 @@ from apps.routing.services.weather_tiles import (
     tile_coordinates_are_valid,
 )
 
+from .checkpoint_weather import (
+    CheckpointWeatherQuerySerializer,
+    serialise_checkpoint_weather,
+)
 from .errors import error_response, exception_to_response
 from .serializers import RouteAnalysisRequestSerializer, serialise_analysis
 
-__all__ = ["HealthView", "RouteAnalysisView", "WeatherTileView"]
+__all__ = [
+    "CheckpointWeatherView",
+    "HealthView",
+    "RouteAnalysisView",
+    "WeatherTileView",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -148,3 +158,36 @@ class WeatherTileView(APIView):
         # Let the browser reuse the tile for as long as the server would.
         response["Cache-Control"] = f"public, max-age={tile.max_age_seconds}"
         return response
+
+
+class CheckpointWeatherView(APIView):
+    """`GET /api/v1/checkpoint-weather?lat=&lon=&at=` -- weather at one point.
+
+    Descriptive context for a checkpoint the driver clicked: observed
+    conditions now, the 3-hourly forecast, and the slot nearest the ETA.
+    It is read-only decoration over the analysis; the risk levels were
+    computed from Open-Meteo before this is ever called and are not touched.
+    """
+
+    def get(self, request: Request) -> Response:
+        query = CheckpointWeatherQuerySerializer(data=request.query_params)
+        if not query.is_valid():
+            return error_response(
+                code="INVALID_REQUEST",
+                message="The checkpoint location could not be validated.",
+                http_status=status.HTTP_400_BAD_REQUEST,
+                details=query.errors,
+            )
+
+        try:
+            result = fetch_checkpoint_weather(query.coordinate(), query.eta())
+        except ProviderConfigurationError as exc:
+            return error_response(
+                code="CHECKPOINT_WEATHER_NOT_CONFIGURED",
+                message=str(exc),
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except ProviderError as exc:
+            return exception_to_response(exc)
+
+        return Response(serialise_checkpoint_weather(result), status=status.HTTP_200_OK)

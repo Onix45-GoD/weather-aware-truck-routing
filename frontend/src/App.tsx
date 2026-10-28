@@ -23,7 +23,7 @@ import { useRouteAnalysis } from '@/features/route-analysis/useRouteAnalysis'
 export default function App() {
   const { data, error, fieldErrors, isLoading, status, analyse } =
     useRouteAnalysis()
-  const { weatherOverlaysAvailable } = useHealth()
+  const { weatherOverlaysAvailable, weatherDetailAvailable } = useHealth()
 
   const [section, setSection] = useState<SectionId>('plan')
   const [tripOpen, setTripOpen] = useState(false)
@@ -208,6 +208,7 @@ export default function App() {
                   route={selectedRoute}
                   checkpoint={checkpoint}
                   timeZone={timeZone}
+                  weatherDetailAvailable={weatherDetailAvailable}
                 />
                 <WeatherProfile
                   route={selectedRoute}

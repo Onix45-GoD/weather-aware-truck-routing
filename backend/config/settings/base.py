@@ -113,6 +113,8 @@ PROVIDER_CACHE_TTL = {
     "weather": int(os.environ.get("CACHE_TTL_WEATHER", 60 * 30)),
     # OpenWeatherMap refreshes its map tiles roughly every ten minutes.
     "weather_tiles": int(os.environ.get("CACHE_TTL_WEATHER_TILES", 60 * 10)),
+    # Observed conditions for a clicked checkpoint; same cadence as tiles.
+    "conditions": int(os.environ.get("CACHE_TTL_CONDITIONS", 60 * 10)),
 }
 
 # In-process cache. Deliberately not Redis: nothing here needs to survive a

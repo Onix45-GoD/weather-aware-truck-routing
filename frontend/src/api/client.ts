@@ -3,11 +3,14 @@
  *
  * Only ever talks to our own backend. No provider credential is referenced
  * here, and none should be: `VITE_*` variables are compiled into the bundle
- * and are therefore public. TomTom and Open-Meteo are reached by the server.
+ * and are therefore public. TomTom, Open-Meteo and OpenWeatherMap are reached
+ * by the server.
  */
 
 import type {
   ApiErrorBody,
+  CheckpointWeatherQuery,
+  CheckpointWeatherResponse,
   HealthResponse,
   RouteAnalysisRequest,
   RouteAnalysisResponse,
@@ -179,4 +182,24 @@ export function fetchHealth(options: RequestOptions = {}): Promise<HealthRespons
     timeoutMs: 5_000,
     ...options,
   })
+}
+
+/**
+ * Detailed weather at one checkpoint. Our server holds the OpenWeatherMap
+ * key; this only ever sends a coordinate and an ETA.
+ */
+export function fetchCheckpointWeather(
+  query: CheckpointWeatherQuery,
+  options: RequestOptions = {},
+): Promise<CheckpointWeatherResponse> {
+  const params = new URLSearchParams({
+    lat: query.lat.toFixed(5),
+    lon: query.lon.toFixed(5),
+  })
+  if (query.at) params.set('at', query.at)
+  return request<CheckpointWeatherResponse>(
+    `/api/v1/checkpoint-weather?${params.toString()}`,
+    { method: 'GET' },
+    { timeoutMs: 15_000, ...options },
+  )
 }

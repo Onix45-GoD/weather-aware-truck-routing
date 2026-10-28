@@ -83,6 +83,7 @@ vi.mock('maplibre-gl', () => {
       return this.layers.has(id) ? { id } : undefined
     }
     setFilter() {}
+    setPaintProperty() {}
     fitBounds() {}
     getCanvas() {
       return { style: {} as CSSStyleDeclaration }
