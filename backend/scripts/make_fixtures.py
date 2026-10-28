@@ -68,7 +68,15 @@ def main() -> None:
                 {
                     "type": "Geography",
                     "id": "SYNTHETIC-DEN",
-                    "score": 0.9947,
+                    # Shaped from the genuine capture, not from the docs. The
+                    # top-level `score` is an UNBOUNDED relevance ranking
+                    # (a real exact match returns 4.73), while
+                    # `matchConfidence.score` is the actual 0-1 confidence.
+                    # The earlier synthetic value of 0.9947 encoded the
+                    # documented-but-wrong assumption and hid a real bug.
+                    "score": 4.7333083153,
+                    "entityType": "Municipality",
+                    "matchConfidence": {"score": 1},
                     "address": {
                         "municipality": "Denver",
                         "countrySubdivision": "CO",

@@ -127,7 +127,72 @@ class TestGeocodingParsing:
         assert result.coordinate == Coordinate(latitude=39.73915, longitude=-104.9847)
         assert result.label == "Denver, CO, United States"
         assert result.provider == "tomtom"
-        assert result.confidence == pytest.approx(0.9947)
+        # From `matchConfidence.score`, NOT the top-level `score`. See
+        # TestConfidenceSemantics below.
+        assert result.confidence == pytest.approx(1.0)
+
+
+class TestConfidenceSemantics:
+    """TomTom's top-level `score` is not a confidence, despite the docs.
+
+    The published documentation describes `score` as a 0-1 relevance score.
+    Real responses return 4.7333083153 for an exact match. Exposing that as
+    `confidence` would make any later `confidence > 0.8` threshold pass for
+    every result, good or bad. `matchConfidence.score` is the real 0-1 value.
+
+    Only the genuine capture exposed this -- the original synthetic fixture
+    had faithfully encoded the documented-but-wrong assumption.
+    """
+
+    @respx.mock
+    def test_confidence_comes_from_match_confidence_not_score(
+        self, geocoder
+    ) -> None:
+        respx.get(url__startswith=GEOCODE_HOST).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "position": {"lat": 40.0, "lon": -100.0},
+                            "score": 4.7333083153,
+                            "matchConfidence": {"score": 0.75},
+                        }
+                    ]
+                },
+            )
+        )
+        result = geocoder.geocode("Denver")
+        assert result.confidence == pytest.approx(0.75)
+        assert result.confidence != pytest.approx(4.7333083153)
+
+    @respx.mock
+    def test_confidence_is_always_within_zero_and_one(self, geocoder) -> None:
+        respx.get(url__startswith=GEOCODE_HOST).mock(
+            return_value=httpx.Response(
+                200, json=tomtom("synthetic_geocode_success.json")
+            )
+        )
+        confidence = geocoder.geocode("Denver, CO").confidence
+        assert confidence is not None
+        assert 0.0 <= confidence <= 1.0
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        "match_confidence",
+        [None, {}, {"score": "high"}, {"score": 4.73}, {"score": -0.1}, "not-an-object"],
+    )
+    def test_an_unusable_match_confidence_reports_none(
+        self, geocoder, match_confidence
+    ) -> None:
+        """Better to report nothing than a number meaning something else."""
+        result_body = {"position": {"lat": 40.0, "lon": -100.0}, "score": 4.73}
+        if match_confidence is not None:
+            result_body["matchConfidence"] = match_confidence
+        respx.get(url__startswith=GEOCODE_HOST).mock(
+            return_value=httpx.Response(200, json={"results": [result_body]})
+        )
+        assert geocoder.geocode("Denver").confidence is None
 
     @respx.mock
     def test_no_results_raises_rather_than_guessing(self, geocoder) -> None:

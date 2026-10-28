@@ -177,12 +177,11 @@ class TomTomGeocodingProvider(_TomTomBase):
             if isinstance(freeform, str) and freeform.strip():
                 label = freeform.strip()
 
-        score = result.get("score")
         return GeocodeResult(
             coordinate=coordinate,
             label=label,
             provider=PROVIDER_NAME,
-            confidence=float(score) if _is_number(score) else None,
+            confidence=_match_confidence(result),
         )
 
 
@@ -367,6 +366,35 @@ class TomTomRoutingProvider(_TomTomBase):
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _match_confidence(result: Mapping[str, Any]) -> float | None:
+    """Extract a genuine 0-1 confidence from a geocoding result.
+
+    **Deliberately not `result["score"]`.** TomTom's published documentation
+    describes the top-level `score` as a 0-1 relevance score, but real
+    responses disagree: an exact match for "Denver, CO" returns
+    ``score: 4.7333083153``. It is an unbounded relevance ranking, useful for
+    ordering several results against each other and meaningless as an absolute
+    confidence.
+
+    Storing that under a field named ``confidence`` was a latent bug -- any
+    later `confidence > 0.8` threshold would pass for *every* result,
+    including bad ones. Only the genuine capture exposed it; the synthetic
+    fixture had encoded the documented-but-wrong 0-1 assumption.
+
+    ``matchConfidence.score`` is the real 0-1 value, so that is what we
+    expose. When it is absent or out of range we report ``None`` rather than
+    substituting a number that means something else.
+    """
+    match_confidence = result.get("matchConfidence")
+    if not isinstance(match_confidence, Mapping):
+        return None
+    value = match_confidence.get("score")
+    if not _is_number(value):
+        return None
+    confidence = float(value)
+    return confidence if 0.0 <= confidence <= 1.0 else None
 
 
 def _rfc3339(moment: datetime) -> str:

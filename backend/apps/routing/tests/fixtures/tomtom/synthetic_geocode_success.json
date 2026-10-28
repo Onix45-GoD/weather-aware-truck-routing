@@ -8,7 +8,11 @@
     {
       "type": "Geography",
       "id": "SYNTHETIC-DEN",
-      "score": 0.9947,
+      "score": 4.7333083153,
+      "entityType": "Municipality",
+      "matchConfidence": {
+        "score": 1
+      },
       "address": {
         "municipality": "Denver",
         "countrySubdivision": "CO",
