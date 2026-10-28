@@ -66,3 +66,21 @@ def test_system_checks_pass() -> None:
     output = StringIO()
     call_command("check", stdout=output, stderr=output)
     assert "no issues" in output.getvalue().lower()
+
+
+def test_tests_never_read_a_developer_dotenv() -> None:
+    """The suite must behave identically with or without a local `.env`.
+
+    `config.settings.base` skips `load_dotenv` under pytest. Without that,
+    a developer with real credentials on disk gets different test results
+    from CI -- and the "runs with no credentials" guarantee becomes untrue
+    exactly where it is hardest to notice.
+    """
+    import os
+
+    from django.conf import settings
+
+    assert "PYTEST_VERSION" in os.environ
+    # Defaults, not whatever the developer's .env happens to say.
+    assert settings.ROUTING_PROVIDER == "fixtures"
+    assert settings.GEOCODING_PROVIDER == "fixtures"

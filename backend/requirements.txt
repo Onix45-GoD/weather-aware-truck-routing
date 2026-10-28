@@ -13,3 +13,7 @@ django-cors-headers==4.9.0
 # httpx 0.28.1 publishes classifiers only through 3.12, so compatibility with
 # 3.14 was verified empirically (import + live request) rather than assumed.
 httpx==0.28.1
+
+# Loads backend/.env for local development. Credentials live only there
+# (gitignored); a real environment variable always wins over the file.
+python-dotenv==1.2.1

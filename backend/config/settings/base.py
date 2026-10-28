@@ -8,7 +8,26 @@ database are all absent. Adding them back would be unused surface area.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Load `backend/.env` when present, for local development. It is gitignored,
+# and real credentials must only ever live there -- never in a tracked file,
+# and never in a `VITE_*` variable, which ships to the browser.
+#
+# `override=False` means a variable already set in the real environment wins,
+# so a deployment's configuration is never silently replaced by a stray file.
+#
+# **Never under pytest.** The suite must be hermetic: it asserts that the
+# defaults need no credentials, and it must behave the same on a machine with
+# a populated `.env` as on CI without one. Loading the file here made a test
+# fail only on developer machines, which is exactly the class of bug that
+# wastes an afternoon.
+_RUNNING_TESTS = "PYTEST_VERSION" in os.environ
+
+if not _RUNNING_TESTS:
+    load_dotenv(BASE_DIR / ".env", override=False)
 
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
