@@ -14,29 +14,33 @@ import type { AnalysedRoute } from '@/api/types'
 import { riskColor, RISK_ORDER, riskStyle } from '@/theme/risk'
 
 import {
+  basemapStyleUrl,
+  DEFAULT_BASEMAP,
+  WEATHER_TILE_MAX_ZOOM,
+  weatherOverlayLabel,
+  weatherTileUrlTemplate,
+  type BasemapId,
+  type WeatherOverlayId,
+} from './basemaps'
+import {
   checkpointPoints,
   riskSegments,
   routeLines,
   routesBounds,
 } from './geojson'
+import { MapControls } from './MapControls'
 import '@/styles/map.css'
-
-/**
- * Keyless dark basemap. CARTO serves these free for reasonable use and the
- * attribution below is a condition of that. Overridable through
- * `VITE_MAP_STYLE_URL` for a different provider.
- */
-const DEFAULT_STYLE =
-  'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
 const SOURCES = {
   routes: 'routes',
   risk: 'risk-segments',
   checkpoints: 'checkpoints',
   endpoints: 'endpoints',
+  weather: 'weather-overlay',
 } as const
 
 const LAYERS = {
+  weather: 'weather-overlay',
   routeCasing: 'route-casing',
   routeLine: 'route-line',
   riskLine: 'risk-line',
@@ -78,6 +82,8 @@ export interface RouteMapProps {
   onSelectCheckpoint: (index: number) => void
   origin?: Place | null | undefined
   destination?: Place | null | undefined
+  /** Whether the server can serve OpenWeatherMap tiles. Defaults to no. */
+  weatherOverlaysAvailable?: boolean | undefined
 }
 
 /**
@@ -147,6 +153,154 @@ function pushData(
   })
 }
 
+/**
+ * Add the route sources and layers. Idempotent, because it runs after every
+ * style load: switching basemaps replaces the whole style, which discards
+ * every source and layer we added, so they are simply added again.
+ */
+function addRouteLayers(map: MapLibreMap): void {
+  for (const id of [
+    SOURCES.routes,
+    SOURCES.risk,
+    SOURCES.checkpoints,
+    SOURCES.endpoints,
+  ]) {
+    if (!map.getSource(id)) {
+      map.addSource(id, { type: 'geojson', data: EMPTY })
+    }
+  }
+
+  if (!map.getLayer(LAYERS.routeCasing)) {
+    map.addLayer({
+      id: LAYERS.routeCasing,
+      type: 'line',
+      source: SOURCES.routes,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#060B14',
+        'line-width': ['case', ['get', 'isSelected'], 9, 6],
+        'line-opacity': 0.9,
+      },
+    })
+  }
+
+  if (!map.getLayer(LAYERS.routeLine)) {
+    map.addLayer({
+      id: LAYERS.routeLine,
+      type: 'line',
+      source: SOURCES.routes,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        // Unselected alternatives stay visible but recede. Ineligible ones
+        // take the No-Travel colour so "blocked" reads differently from
+        // "not chosen".
+        'line-color': [
+          'case',
+          ['get', 'isSelected'],
+          '#3B82F6',
+          ['!', ['get', 'eligible']],
+          '#A855F7',
+          '#64748B',
+        ],
+        'line-width': ['case', ['get', 'isSelected'], 5, 3],
+        'line-opacity': ['case', ['get', 'isSelected'], 0.35, 0.75],
+      },
+    })
+  }
+
+  // Risk colouring sits above the plain line and only covers the selected
+  // route -- three routes of risk colour at once is unreadable.
+  if (!map.getLayer(LAYERS.riskLine)) {
+    map.addLayer({
+      id: LAYERS.riskLine,
+      type: 'line',
+      source: SOURCES.risk,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': riskColorExpression(),
+        'line-width': 5,
+        'line-opacity': 0.95,
+      },
+    })
+  }
+
+  if (!map.getLayer(LAYERS.checkpointDots)) {
+    map.addLayer({
+      id: LAYERS.checkpointDots,
+      type: 'circle',
+      source: SOURCES.checkpoints,
+      paint: {
+        'circle-radius': 4,
+        'circle-color': riskColorExpression(),
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': '#08111F',
+      },
+    })
+  }
+
+  if (!map.getLayer(LAYERS.checkpointSelected)) {
+    map.addLayer({
+      id: LAYERS.checkpointSelected,
+      type: 'circle',
+      source: SOURCES.checkpoints,
+      filter: ['==', ['get', 'index'], -1],
+      paint: {
+        'circle-radius': 8,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': '#F1F5F9',
+      },
+    })
+  }
+
+  if (!map.getLayer(LAYERS.endpointDots)) {
+    map.addLayer({
+      id: LAYERS.endpointDots,
+      type: 'circle',
+      source: SOURCES.endpoints,
+      paint: {
+        'circle-radius': 7,
+        'circle-color': ['case', ['get', 'isOrigin'], '#22C55E', '#F1F5F9'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#08111F',
+      },
+    })
+  }
+}
+
+/**
+ * Replace the weather raster with `overlay`, or remove it when null.
+ *
+ * The raster goes *under* the route casing so the recommendation is never
+ * obscured by a rain cell. Tiles come from our own server, which holds the
+ * OpenWeatherMap key -- see `weatherTileUrlTemplate`.
+ */
+function setWeatherOverlay(
+  map: MapLibreMap,
+  overlay: WeatherOverlayId | null,
+): void {
+  if (map.getLayer(LAYERS.weather)) map.removeLayer(LAYERS.weather)
+  if (map.getSource(SOURCES.weather)) map.removeSource(SOURCES.weather)
+  if (!overlay) return
+
+  map.addSource(SOURCES.weather, {
+    type: 'raster',
+    tiles: [weatherTileUrlTemplate(overlay)],
+    tileSize: 256,
+    maxzoom: WEATHER_TILE_MAX_ZOOM,
+    attribution: 'Weather © OpenWeatherMap',
+  })
+  map.addLayer(
+    {
+      id: LAYERS.weather,
+      type: 'raster',
+      source: SOURCES.weather,
+      paint: { 'raster-opacity': 0.7 },
+    },
+    map.getLayer(LAYERS.routeCasing) ? LAYERS.routeCasing : undefined,
+  )
+}
+
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -159,11 +313,18 @@ export function RouteMap({
   onSelectCheckpoint,
   origin,
   destination,
+  weatherOverlaysAvailable = false,
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
-  const [ready, setReady] = useState(false)
+  // Counts style loads. Zero means "no style yet"; it increments on the
+  // first load and again after every basemap switch, so effects that draw
+  // on the style re-run exactly when the style is replaced.
+  const [styleGeneration, setStyleGeneration] = useState(0)
   const [styleError, setStyleError] = useState<string | null>(null)
+  const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP)
+  const [overlay, setOverlay] = useState<WeatherOverlayId | null>(null)
+  const ready = styleGeneration > 0
 
   // Latest callbacks, so map handlers registered once never close over stale
   // props. Re-registering them on every render would leak listeners.
@@ -186,13 +347,11 @@ export function RouteMap({
     const container = containerRef.current
     if (!container || mapRef.current) return
 
-    const styleUrl = import.meta.env['VITE_MAP_STYLE_URL'] || DEFAULT_STYLE
-
     let map: MapLibreMap
     try {
       map = new MapLibreMap({
         container,
-        style: styleUrl,
+        style: basemapStyleUrl(DEFAULT_BASEMAP),
         center: [-96.5, 40.5],
         zoom: 3.6,
         attributionControl: { compact: true },
@@ -211,7 +370,12 @@ export function RouteMap({
     map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right')
     map.addControl(new ScaleControl({ unit: 'imperial' }), 'bottom-left')
 
-    const onLoad = () => setReady(true)
+    // `style.load` rather than `load`: `load` fires once, `style.load` fires
+    // for every style, which is what a basemap switch needs.
+    const onStyleLoad = () => {
+      setStyleError(null)
+      setStyleGeneration((generation) => generation + 1)
+    }
     const onError = (event: { error?: { message?: string } }) => {
       // Tile 404s are noisy but not fatal; a style failure is.
       const message = event.error?.message ?? ''
@@ -223,124 +387,40 @@ export function RouteMap({
       }
     }
 
-    map.on('load', onLoad)
+    map.on('style.load', onStyleLoad)
     map.on('error', onError)
 
     return () => {
-      map.off('load', onLoad)
+      map.off('style.load', onStyleLoad)
       map.off('error', onError)
       map.remove()
       mapRef.current = null
-      setReady(false)
+      setStyleGeneration(0)
     }
   }, [])
 
-  // --- sources and layers, created once the style is live ----------------
+  // --- basemap switch ------------------------------------------------------
+  // The map is created with the default, so the first run is a no-op; later
+  // runs replace the style, and `style.load` re-triggers the layer effects.
+  const appliedBasemap = useRef<BasemapId>(DEFAULT_BASEMAP)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || appliedBasemap.current === basemap) return
+    appliedBasemap.current = basemap
+    map.setStyle(basemapStyleUrl(basemap))
+  }, [basemap])
+
+  // --- sources and layers, (re)created on every style load ---------------
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
 
-    for (const id of Object.values(SOURCES)) {
-      if (!map.getSource(id)) {
-        map.addSource(id, { type: 'geojson', data: EMPTY })
-      }
-    }
-
-    if (!map.getLayer(LAYERS.routeCasing)) {
-      map.addLayer({
-        id: LAYERS.routeCasing,
-        type: 'line',
-        source: SOURCES.routes,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': '#060B14',
-          'line-width': ['case', ['get', 'isSelected'], 9, 6],
-          'line-opacity': 0.9,
-        },
-      })
-    }
-
-    if (!map.getLayer(LAYERS.routeLine)) {
-      map.addLayer({
-        id: LAYERS.routeLine,
-        type: 'line',
-        source: SOURCES.routes,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          // Unselected alternatives stay visible but recede. Ineligible ones
-          // take the No-Travel colour so "blocked" reads differently from
-          // "not chosen".
-          'line-color': [
-            'case',
-            ['get', 'isSelected'],
-            '#3B82F6',
-            ['!', ['get', 'eligible']],
-            '#A855F7',
-            '#64748B',
-          ],
-          'line-width': ['case', ['get', 'isSelected'], 5, 3],
-          'line-opacity': ['case', ['get', 'isSelected'], 0.35, 0.75],
-        },
-      })
-    }
-
-    // Risk colouring sits above the plain line and only covers the selected
-    // route -- three routes of risk colour at once is unreadable.
-    if (!map.getLayer(LAYERS.riskLine)) {
-      map.addLayer({
-        id: LAYERS.riskLine,
-        type: 'line',
-        source: SOURCES.risk,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': riskColorExpression(),
-          'line-width': 5,
-          'line-opacity': 0.95,
-        },
-      })
-    }
-
-    if (!map.getLayer(LAYERS.checkpointDots)) {
-      map.addLayer({
-        id: LAYERS.checkpointDots,
-        type: 'circle',
-        source: SOURCES.checkpoints,
-        paint: {
-          'circle-radius': 4,
-          'circle-color': riskColorExpression(),
-          'circle-stroke-width': 1.5,
-          'circle-stroke-color': '#08111F',
-        },
-      })
-    }
-
-    if (!map.getLayer(LAYERS.checkpointSelected)) {
-      map.addLayer({
-        id: LAYERS.checkpointSelected,
-        type: 'circle',
-        source: SOURCES.checkpoints,
-        filter: ['==', ['get', 'index'], -1],
-        paint: {
-          'circle-radius': 8,
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-width': 2.5,
-          'circle-stroke-color': '#F1F5F9',
-        },
-      })
-    }
-
-    if (!map.getLayer(LAYERS.endpointDots)) {
-      map.addLayer({
-        id: LAYERS.endpointDots,
-        type: 'circle',
-        source: SOURCES.endpoints,
-        paint: {
-          'circle-radius': 7,
-          'circle-color': ['case', ['get', 'isOrigin'], '#22C55E', '#F1F5F9'],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#08111F',
-        },
-      })
+    try {
+      addRouteLayers(map)
+    } catch (error) {
+      // oxlint-disable-next-line react/set-state-in-effect
+      setStyleError(`Could not prepare the map layers: ${describe(error)}`)
+      return
     }
 
     const clickRoute = (event: MapLayerMouseEvent) => {
@@ -373,7 +453,21 @@ export function RouteMap({
         map.off('mouseleave', layer, leave)
       }
     }
-  }, [ready])
+  }, [ready, styleGeneration])
+
+  // --- weather overlay -----------------------------------------------------
+  // Depends on the generation too: a basemap switch wipes the raster with
+  // everything else, so it is re-added after the route layers exist.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    try {
+      setWeatherOverlay(map, weatherOverlaysAvailable ? overlay : null)
+    } catch (error) {
+      // oxlint-disable-next-line react/set-state-in-effect
+      setStyleError(`Could not show the weather overlay: ${describe(error)}`)
+    }
+  }, [ready, styleGeneration, overlay, weatherOverlaysAvailable])
 
   // --- data updates -------------------------------------------------------
   useEffect(() => {
@@ -387,7 +481,15 @@ export function RouteMap({
       // oxlint-disable-next-line react/set-state-in-effect
       setStyleError(`Could not draw the routes: ${describe(error)}`)
     }
-  }, [ready, routes, selectedRouteId, selectedRoute, origin, destination])
+  }, [
+    ready,
+    styleGeneration,
+    routes,
+    selectedRouteId,
+    selectedRoute,
+    origin,
+    destination,
+  ])
 
   // Highlight ring follows the selected checkpoint.
   useEffect(() => {
@@ -398,7 +500,7 @@ export function RouteMap({
       ['get', 'index'],
       selectedCheckpointIndex ?? -1,
     ])
-  }, [ready, selectedCheckpointIndex])
+  }, [ready, styleGeneration, selectedCheckpointIndex])
 
   // Fit to the routes once they change, not on every render.
   const fittedKey = useRef<string>('')
@@ -439,12 +541,29 @@ export function RouteMap({
         </div>
       )}
 
-      <MapLegend hasSelection={Boolean(selectedRoute)} />
+      <MapControls
+        basemap={basemap}
+        onBasemapChange={setBasemap}
+        overlay={overlay}
+        onOverlayChange={setOverlay}
+        overlaysAvailable={weatherOverlaysAvailable}
+      />
+
+      <MapLegend
+        hasSelection={Boolean(selectedRoute)}
+        overlay={weatherOverlaysAvailable ? overlay : null}
+      />
     </div>
   )
 }
 
-function MapLegend({ hasSelection }: { hasSelection: boolean }) {
+function MapLegend({
+  hasSelection,
+  overlay,
+}: {
+  hasSelection: boolean
+  overlay: WeatherOverlayId | null
+}) {
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-lg border border-hairline bg-panel/90 p-3 backdrop-blur-sm">
       <p className="m-0 mb-2 text-xs font-semibold text-ink">Weather risk</p>
@@ -471,6 +590,15 @@ function MapLegend({ hasSelection }: { hasSelection: boolean }) {
       {!hasSelection && (
         <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
           Select a route to see its checkpoints and risk colouring.
+        </p>
+      )}
+      {overlay && (
+        // "Now" is load-bearing. The overlay is current conditions; the
+        // route colours are the forecast at each ETA. They are not the same
+        // thing, and the legend must not let them be read as one.
+        <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
+          Overlay: {weatherOverlayLabel(overlay)} <strong>now</strong>, not at
+          ETA. Route colours are the forecast.
         </p>
       )}
     </div>

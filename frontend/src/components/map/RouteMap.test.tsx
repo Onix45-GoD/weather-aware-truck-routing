@@ -8,6 +8,7 @@
  */
 
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Providers } from '@/app/Providers'
@@ -21,11 +22,14 @@ vi.mock('maplibre-gl', () => {
     removed = false
     sources = new Set<string>()
     layers = new Set<string>()
+    styleUrl: string
+    sourceSpecs = new Map<string, Record<string, unknown>>()
 
     options: Record<string, unknown>
 
     constructor(options: Record<string, unknown>) {
       this.options = options
+      this.styleUrl = String(options['style'])
       mapInstances.push(this as unknown as Record<string, unknown>)
     }
 
@@ -35,7 +39,7 @@ vi.mock('maplibre-gl', () => {
         typeof layerOrHandler === 'string' ? `${event}:${layerOrHandler}` : event
       if (!this.handlers.has(key)) this.handlers.set(key, new Set())
       this.handlers.get(key)!.add(handler)
-      if (event === 'load') queueMicrotask(() => handler({}))
+      if (event === 'style.load') queueMicrotask(() => handler({}))
     }
 
     off(event: string, layerOrHandler: unknown, maybeHandler?: unknown) {
@@ -50,8 +54,24 @@ vi.mock('maplibre-gl', () => {
     }
 
     addControl() {}
-    addSource(id: string) {
+    addSource(id: string, spec: Record<string, unknown>) {
       this.sources.add(id)
+      this.sourceSpecs.set(id, spec)
+    }
+    removeSource(id: string) {
+      this.sources.delete(id)
+      this.sourceSpecs.delete(id)
+    }
+    removeLayer(id: string) {
+      this.layers.delete(id)
+    }
+    /** A new style discards every source and layer, then loads. */
+    setStyle(url: string) {
+      this.styleUrl = url
+      this.sources.clear()
+      this.sourceSpecs.clear()
+      this.layers.clear()
+      queueMicrotask(() => this.emit('style.load', {}))
     }
     addLayer(layer: { id: string }) {
       this.layers.add(layer.id)
@@ -217,5 +237,102 @@ describe('map accessibility', () => {
   it('prompts when no route is selected', () => {
     renderMap({ selectedRouteId: null })
     expect(screen.getByText(/select a route to see/i)).toBeVisible()
+  })
+})
+
+type Fake = {
+  styleUrl: string
+  sources: Set<string>
+  layers: Set<string>
+  sourceSpecs: Map<string, Record<string, unknown>>
+}
+
+async function mountedMap(
+  props: Partial<Parameters<typeof RouteMap>[0]> = {},
+): Promise<Fake> {
+  renderMap(props)
+  const map = await waitFor(() => {
+    expect(mapInstances).toHaveLength(1)
+    return mapInstances[0] as unknown as Fake
+  })
+  await waitFor(() => expect(map.layers.has('route-line')).toBe(true))
+  return map
+}
+
+describe('basemap switching', () => {
+  it('starts on the street map', async () => {
+    const map = await mountedMap()
+    expect(map.styleUrl).toMatch(/voyager/)
+    expect(screen.getByRole('button', { name: 'Streets' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('replaces the style and redraws the routes on top of it', async () => {
+    const map = await mountedMap()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Dark' }))
+
+    await waitFor(() => expect(map.styleUrl).toMatch(/dark-matter/))
+    // The new style wiped every layer; they must come back by themselves.
+    await waitFor(() => expect(map.layers.has('route-line')).toBe(true))
+    expect(map.sources.has('routes')).toBe(true)
+    expect(map.sources.has('checkpoints')).toBe(true)
+  })
+
+  it('does not recreate the map to change the style', async () => {
+    await mountedMap()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Dark' }))
+    expect(mapInstances).toHaveLength(1)
+  })
+})
+
+describe('weather overlay', () => {
+  it('is disabled when the server has no OpenWeatherMap key', async () => {
+    await mountedMap({ weatherOverlaysAvailable: false })
+    expect(screen.getByRole('button', { name: 'Precipitation' })).toBeDisabled()
+  })
+
+  it('adds a raster layer under the routes, served by our own API', async () => {
+    const map = await mountedMap({ weatherOverlaysAvailable: true })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Precipitation' }))
+
+    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
+    const spec = map.sourceSpecs.get('weather-overlay')!
+    expect(spec['type']).toBe('raster')
+    const [template] = spec['tiles'] as string[]
+    expect(template).toContain('/api/v1/weather-tiles/precipitation_new/')
+    expect(template).not.toMatch(/openweathermap|appid/)
+    expect(screen.getByText(/now/)).toBeVisible()
+  })
+
+  it('removes the overlay when deselected', async () => {
+    const map = await mountedMap({ weatherOverlaysAvailable: true })
+    const user = userEvent.setup()
+    const rain = screen.getByRole('button', { name: 'Precipitation' })
+
+    await user.click(rain)
+    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
+    await user.click(rain)
+
+    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(false))
+    expect(map.sources.has('weather-overlay')).toBe(false)
+  })
+
+  it('survives a basemap switch', async () => {
+    const map = await mountedMap({ weatherOverlaysAvailable: true })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Clouds' }))
+    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
+    await user.click(screen.getByRole('button', { name: 'Dark' }))
+
+    await waitFor(() => expect(map.styleUrl).toMatch(/dark-matter/))
+    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
+    expect(map.layers.has('route-line')).toBe(true)
   })
 })

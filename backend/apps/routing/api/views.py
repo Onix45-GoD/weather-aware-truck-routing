@@ -9,20 +9,26 @@ from __future__ import annotations
 import logging
 import time
 
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.routing.providers.errors import ProviderConfigurationError, ProviderError
 from apps.routing.providers.factory import provider_status
 from apps.routing.services.analysis import analyse_trip
 from apps.routing.services.errors import AnalysisError
-from apps.routing.providers.errors import ProviderError
+from apps.routing.services.weather_tiles import (
+    WEATHER_TILE_LAYERS,
+    fetch_weather_tile,
+    tile_coordinates_are_valid,
+)
 
 from .errors import error_response, exception_to_response
 from .serializers import RouteAnalysisRequestSerializer, serialise_analysis
 
-__all__ = ["HealthView", "RouteAnalysisView"]
+__all__ = ["HealthView", "RouteAnalysisView", "WeatherTileView"]
 
 logger = logging.getLogger(__name__)
 
@@ -90,3 +96,55 @@ class RouteAnalysisView(APIView):
         # A trip with no safe route is a successful analysis, not an error:
         # the answer "do not drive this" is exactly what the caller asked for.
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class WeatherTileView(APIView):
+    """`GET /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png` -- a tile proxy.
+
+    The browser's map asks here for OpenWeatherMap raster tiles; the service
+    adds the key, fetches, caches and hands back the PNG. The key is the whole
+    reason the endpoint exists: it must never be embedded in a tile URL the
+    browser can read.
+
+    Success is a raw image response, so DRF's JSON renderer is bypassed on
+    that path. Failures use the same error envelope as every other endpoint.
+    """
+
+    def get(
+        self, _request: Request, layer: str, z: int, x: int, y: int
+    ) -> Response | HttpResponse:
+        if layer not in WEATHER_TILE_LAYERS:
+            return error_response(
+                code="UNKNOWN_TILE_LAYER",
+                message=(
+                    f"Unknown weather layer {layer!r}. Expected one of: "
+                    + ", ".join(sorted(WEATHER_TILE_LAYERS))
+                    + "."
+                ),
+                http_status=status.HTTP_404_NOT_FOUND,
+            )
+        if not tile_coordinates_are_valid(z, x, y):
+            return error_response(
+                code="INVALID_TILE",
+                message=f"Tile {z}/{x}/{y} is outside the supported range.",
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            tile = fetch_weather_tile(layer, z, x, y)
+        except ProviderConfigurationError as exc:
+            # Not an outage: the feature is simply switched off on this
+            # deployment. 503 with a stable code lets the UI disable the
+            # control instead of showing broken tiles.
+            return error_response(
+                code="WEATHER_TILES_NOT_CONFIGURED",
+                message=str(exc),
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except ProviderError as exc:
+            return exception_to_response(exc)
+
+        response = HttpResponse(tile.png, content_type="image/png")
+        # Let the browser reuse the tile for as long as the server would.
+        response["Cache-Control"] = f"public, max-age={tile.max_age_seconds}"
+        return response

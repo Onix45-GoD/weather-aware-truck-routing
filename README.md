@@ -127,6 +127,10 @@ For real TomTom routing, put your key in `backend/.env` (gitignored):
 TOMTOM_API_KEY=your-key-here
 ROUTING_PROVIDER=tomtom
 GEOCODING_PROVIDER=tomtom
+
+# Optional: enables the precipitation / clouds / wind / temperature
+# overlays on the map. Route analysis never uses this key.
+OPENWEATHERMAP_API_KEY=your-key-here
 ```
 
 ### Frontend environment variables
@@ -134,24 +138,38 @@ GEOCODING_PROVIDER=tomtom
 | Variable | Default | Purpose |
 |---|---|---|
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Django API origin |
-| `VITE_MAP_STYLE_URL` | CARTO dark-matter | MapLibre basemap style |
+| `VITE_MAP_STYLE_URL` | CARTO Voyager | Replaces the default **Streets** basemap style |
 
 ⚠️ **Never put a provider credential in a `VITE_*` variable.** They are
 compiled into the JavaScript bundle and are readable by anyone who opens the
-site. TomTom and Open-Meteo are called by the Django server, never by the
-browser — a test asserts the frontend request carries no credential.
+site. TomTom, Open-Meteo and OpenWeatherMap are called by the Django server,
+never by the browser — tests assert that neither the analysis request nor
+the weather-tile URLs carry a credential.
 
 ---
 
 ## API
 
-Two endpoints. No authentication, no accounts, no database — the service is
-stateless, and two identical requests produce identical output.
+Three endpoints. No authentication, no accounts, no database — the service
+is stateless, and two identical requests produce identical output.
 
 ### `GET /api/v1/health`
 
 Liveness, plus which providers are configured. Reports whether a credential is
 *present*, never any part of its value.
+
+### `GET /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png`
+
+Proxies one OpenWeatherMap raster tile — `precipitation_new`, `clouds_new`,
+`wind_new` or `temp_new`, zoom 0–12. The server appends the key, fetches,
+caches for ten minutes and returns the PNG with a matching `Cache-Control`.
+The key is the whole reason the endpoint exists: OpenWeatherMap puts it in
+the tile URL, and a tile URL the browser can read is a key the browser can
+read. Without `OPENWEATHERMAP_API_KEY` it answers `503
+WEATHER_TILES_NOT_CONFIGURED` and the UI disables the overlay toggle;
+an unknown layer is `404 UNKNOWN_TILE_LAYER`, an out-of-range tile `400
+INVALID_TILE`. These tiles are **current conditions**, not the forecast at
+a checkpoint's ETA — see *Map* below.
 
 ### `POST /api/v1/route-analysis`
 
@@ -350,10 +368,15 @@ content.
 
 ### Map
 
-MapLibre GL with a keyless CARTO dark basemap (attribution is shown, as its
-terms require). The map is **code-split**: it is ~1 MB of the bundle, and
-making the first paint wait for it would block the trip form, which is the
-only thing a user can act on before an analysis exists.
+MapLibre GL with keyless CARTO basemaps (attribution is shown, as their
+terms require). **Streets** (Voyager) is the default — a driver needs to
+read road numbers and town names, and the risk colours separate better on a
+light ground — with **Dark** one click away. Switching calls `setStyle`,
+which discards every layer we added, so the route layers are re-created on
+each `style.load` rather than only once. The map is **code-split**: it is
+~1 MB of the bundle, and making the first paint wait for it would block the
+trip form, which is the only thing a user can act on before an analysis
+exists.
 
 - Route geometry comes from the API — never reconstructed from checkpoints.
 - The selected route is coloured per-segment by checkpoint risk, using
@@ -362,14 +385,19 @@ only thing a user can act on before an analysis exists.
   colour so "blocked" reads differently from "not chosen".
 - If the basemap fails to load, a banner says so and the rest of the
   dashboard keeps working.
+- **Weather overlays** — precipitation, clouds, wind, temperature — are
+  OpenWeatherMap rasters drawn *under* the routes, fetched through the
+  Django proxy above. The toggle is disabled, with an explanation, when the
+  server has no key; the UI learns that from `/api/v1/health` on load.
 
-### What the reference design showed that this does not
+### Overlay versus forecast — a deliberate distinction
 
-The mockups include an **animated weather-radar raster** behind the route.
-That is not implemented, deliberately: there is no radar source in this
-system, and the analysis is *forecast*-based — a trip two days out has no
-radar to show. Painting live radar behind a forecast-driven recommendation
-would imply a correspondence that does not exist.
+The mockups show a weather raster behind the route. One is now available,
+but it is labelled **now** in the legend on purpose. The overlay is current
+conditions; the route colouring is the *forecast at each checkpoint's ETA*.
+A trip leaving in two days can show green checkpoints under today's rain
+and both be correct. The legend says so whenever an overlay is on, so the
+two are never read as one picture.
 
 What is shown instead is real: risk colouring derived from the actual
 checkpoint classifications, and a wind/rain/snow profile plotted from the
@@ -510,6 +538,7 @@ captured forecasts are never presented as current weather.
 | Geocoding | TomTom Search v2, or offline fixtures | `TOMTOM_API_KEY` (optional) |
 | Truck routing | TomTom Routing v1, or offline fixtures | `TOMTOM_API_KEY` (optional) |
 | Weather | Open-Meteo hourly forecast | **None required** |
+| Map overlays | OpenWeatherMap raster tiles, proxied | `OPENWEATHERMAP_API_KEY` (optional) |
 
 Selected via `ROUTING_PROVIDER`, `GEOCODING_PROVIDER` and `WEATHER_PROVIDER`
 (see [.env.example](.env.example)). All three default to a configuration that

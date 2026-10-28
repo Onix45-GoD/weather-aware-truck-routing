@@ -16,12 +16,14 @@ import { RouteSummary } from '@/components/route/RouteSummary'
 import { CheckpointDetails } from '@/components/weather/CheckpointDetails'
 import { CheckpointTable } from '@/components/weather/CheckpointTable'
 import { WeatherProfile } from '@/components/weather/WeatherProfile'
+import { useHealth } from '@/features/health/useHealth'
 import { TripForm } from '@/features/route-analysis/TripForm'
 import { useRouteAnalysis } from '@/features/route-analysis/useRouteAnalysis'
 
 export default function App() {
   const { data, error, fieldErrors, isLoading, status, analyse } =
     useRouteAnalysis()
+  const { weatherOverlaysAvailable } = useHealth()
 
   const [section, setSection] = useState<SectionId>('plan')
   const [tripOpen, setTripOpen] = useState(false)
@@ -154,6 +156,7 @@ export default function App() {
                     onSelectCheckpoint={setSelectedCheckpoint}
                     origin={data?.origin ?? null}
                     destination={data?.destination ?? null}
+                    weatherOverlaysAvailable={weatherOverlaysAvailable}
                   />
                 </ErrorBoundary>
               </div>

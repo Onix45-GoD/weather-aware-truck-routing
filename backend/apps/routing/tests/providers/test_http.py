@@ -40,6 +40,7 @@ class TestRedaction:
             "https://api.tomtom.com/x?api_key=SECRET123",
             "https://api.tomtom.com/x?token=SECRET123",
             "https://api.tomtom.com/x?access_token=SECRET123",
+            "https://tile.openweathermap.org/map/x/1/2/3.png?appid=SECRET123",
         ],
     )
     def test_credential_values_are_masked(self, raw: str) -> None:

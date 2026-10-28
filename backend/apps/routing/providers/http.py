@@ -55,7 +55,11 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 #: Query parameters whose values must never be logged, cached or echoed back.
-SECRET_PARAM_NAMES = frozenset({"key", "apikey", "api_key", "token", "access_token"})
+# `appid` is OpenWeatherMap's name for its key; without it here, httpx's INFO
+# request log would print the key in every tile URL.
+SECRET_PARAM_NAMES = frozenset(
+    {"key", "apikey", "api_key", "appid", "token", "access_token"}
+)
 
 _SECRET_QUERY_RE = re.compile(
     r"(?i)\b(" + "|".join(sorted(SECRET_PARAM_NAMES)) + r")=[^&\s]*"

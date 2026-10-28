@@ -2,6 +2,9 @@
 
     GET  /api/v1/health          liveness + which providers are configured
     POST /api/v1/route-analysis  the full weather-aware route analysis
+    GET  /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png
+                                 OpenWeatherMap raster tiles, proxied so the
+                                 key stays on the server
 
 Note on the path: Milestone 1's plan sketched this endpoint as
 `/api/v1/analyze`. It ships as `/api/v1/route-analysis`, which says what it

@@ -221,5 +221,6 @@ export interface ApiErrorBody {
 
 export interface HealthResponse {
   status: string
-  providers: Record<string, string | boolean>
+  /** Provider names and credential *presence* flags -- never a value. */
+  providers: Record<string, string | boolean | null>
 }

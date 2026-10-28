@@ -14,9 +14,10 @@ import {
 import App from './App'
 
 const analyseRoute = vi.hoisted(() => vi.fn())
+const fetchHealth = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return { ...actual, analyseRoute }
+  return { ...actual, analyseRoute, fetchHealth }
 })
 
 function renderApp() {
@@ -38,6 +39,7 @@ async function submit() {
 
 beforeEach(() => {
   analyseRoute.mockReset()
+  fetchHealth.mockResolvedValue({ status: 'ok', providers: {} })
 })
 
 describe('initial state', () => {

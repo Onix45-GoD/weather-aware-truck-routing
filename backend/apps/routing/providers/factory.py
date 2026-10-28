@@ -19,12 +19,14 @@ from .fixtures import (
     FixtureWeatherProvider,
 )
 from .openmeteo import OpenMeteoWeatherProvider
+from .openweathermap import OpenWeatherMapTileProvider
 from .tomtom import TomTomGeocodingProvider, TomTomRoutingProvider
 
 __all__ = [
     "get_geocoding_provider",
     "get_routing_provider",
     "get_weather_provider",
+    "get_weather_tile_provider",
     "provider_status",
 ]
 
@@ -84,6 +86,23 @@ def get_weather_provider(name: str | None = None) -> WeatherProvider:
     )
 
 
+def get_weather_tile_provider() -> OpenWeatherMapTileProvider:
+    """Build the weather-map tile proxy, or explain why it cannot run.
+
+    Unlike routing there is no offline fallback: tiles are decoration, and a
+    missing key simply means the overlay toggle stays disabled in the UI.
+    Caching is the service's job (`services.weather_tiles`), not the adapter's.
+    """
+    key = getattr(settings, "OPENWEATHERMAP_API_KEY", "") or ""
+    if not key.strip():
+        raise ProviderConfigurationError(
+            "OPENWEATHERMAP_API_KEY is not set, so weather map tiles are "
+            "unavailable. Route analysis does not depend on them.",
+            provider="openweathermap",
+        )
+    return OpenWeatherMapTileProvider(key)
+
+
 def provider_status() -> dict[str, Any]:
     """Report which providers are selected and whether credentials exist.
 
@@ -91,10 +110,14 @@ def provider_status() -> dict[str, Any]:
     is safe to expose on a health endpoint and safe to log.
     """
     key = getattr(settings, "TOMTOM_API_KEY", "") or ""
+    owm_key = getattr(settings, "OPENWEATHERMAP_API_KEY", "") or ""
     return {
         "geocoding": getattr(settings, "GEOCODING_PROVIDER", "fixtures"),
         "routing": getattr(settings, "ROUTING_PROVIDER", "fixtures"),
         "weather": getattr(settings, "WEATHER_PROVIDER", "open-meteo"),
         "tomtom_key_configured": bool(key.strip()),
         "open_meteo_requires_key": False,
+        # Tiles are the one optional, key-gated feature the UI adapts to.
+        "weather_tiles": "openweathermap" if owm_key.strip() else None,
+        "openweathermap_key_configured": bool(owm_key.strip()),
     }
