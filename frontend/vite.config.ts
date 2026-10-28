@@ -15,6 +15,18 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Bind IPv4 explicitly. On Windows, Node can resolve `localhost` to
+    // IPv6-only, leaving 127.0.0.1 refused -- confusing for anyone who
+    // follows the README's URL.
+    host: '127.0.0.1',
+  },
+  optimizeDeps: {
+    // MapLibre parses tiles in a Web Worker and locates it by URL. Vite's
+    // dependency pre-bundler rewrites the package in a way that breaks that
+    // URL in dev, so the worker fails to load and the map renders nothing
+    // -- with only a console error to show for it. Excluding it from
+    // pre-bundling is the documented fix; production builds are unaffected.
+    exclude: ['maplibre-gl'],
   },
   test: {
     environment: 'jsdom',
