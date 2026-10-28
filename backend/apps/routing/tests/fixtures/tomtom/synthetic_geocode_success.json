@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "query": "denver co",
+    "numResults": 1,
+    "totalResults": 1
+  },
+  "results": [
+    {
+      "type": "Geography",
+      "id": "SYNTHETIC-DEN",
+      "score": 0.9947,
+      "address": {
+        "municipality": "Denver",
+        "countrySubdivision": "CO",
+        "country": "United States",
+        "freeformAddress": "Denver, CO, United States"
+      },
+      "position": {
+        "lat": 39.73915,
+        "lon": -104.9847
+      }
+    }
+  ]
+}

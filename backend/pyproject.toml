@@ -9,12 +9,18 @@ DJANGO_SETTINGS_MODULE = "config.settings.dev"
 pythonpath = ["."]
 testpaths = ["apps/routing/tests"]
 python_files = ["test_*.py"]
-addopts = "-q --strict-markers"
+# `-m "not live"` is the safety catch: live tests need a network (and, for
+# TomTom, a key) and must never fire during an ordinary `pytest` run. Opt in
+# explicitly with `pytest -m live`.
+addopts = "-q --strict-markers -m 'not live'"
+markers = [
+    "live: hits a real provider over the network. Excluded by default; run with `pytest -m live`.",
+]
 filterwarnings = ["error::DeprecationWarning"]
 
 [tool.coverage.run]
 branch = true
-source = ["apps/routing/domain"]
+source = ["apps/routing/domain", "apps/routing/providers"]
 
 [tool.coverage.report]
 show_missing = true
@@ -23,4 +29,6 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+    # Protocol method bodies are declarations, not executable code.
+    "^\\s*\\.\\.\\.$",
 ]

@@ -1,0 +1,39 @@
+{
+  "latitude": 40.0,
+  "longitude": -100.0,
+  "timezone": "GMT",
+  "hourly_units": {
+    "time": "iso8601",
+    "wind_speed_10m": "mp/h",
+    "wind_gusts_10m": "mp/h",
+    "rain": "inch",
+    "showers": "inch",
+    "snowfall": "furlongs"
+  },
+  "hourly": {
+    "time": [
+      "2026-11-02T00:00",
+      "2026-11-02T01:00"
+    ],
+    "wind_speed_10m": [
+      10.0,
+      11.0
+    ],
+    "wind_gusts_10m": [
+      15.0,
+      16.0
+    ],
+    "rain": [
+      0.0,
+      0.0
+    ],
+    "showers": [
+      0.0,
+      0.0
+    ],
+    "snowfall": [
+      0.1,
+      0.2
+    ]
+  }
+}

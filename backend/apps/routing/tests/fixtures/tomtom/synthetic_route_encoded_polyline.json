@@ -1,0 +1,13 @@
+{
+  "formatVersion": "0.0.12",
+  "routes": [
+    {
+      "summary": {
+        "lengthInMeters": 1610000,
+        "travelTimeInSeconds": 54000
+      },
+      "encodedPolyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+      "encodedPolylinePrecision": 5
+    }
+  ]
+}

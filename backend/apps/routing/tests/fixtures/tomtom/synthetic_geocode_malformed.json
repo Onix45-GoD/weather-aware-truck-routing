@@ -1,0 +1,11 @@
+{
+  "summary": {
+    "query": "denver"
+  },
+  "results": [
+    {
+      "type": "Geography",
+      "address": {}
+    }
+  ]
+}
