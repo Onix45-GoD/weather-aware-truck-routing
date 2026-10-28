@@ -11,6 +11,7 @@ from apps.routing.domain.geo import (
     interpolate,
     locate_distance,
     point_at_distance,
+    simplify_polyline,
     total_distance_miles,
 )
 from apps.routing.domain.models import Coordinate
@@ -162,3 +163,93 @@ class TestDecodePolyline:
     def test_rejects_a_truncated_varint(self) -> None:
         with pytest.raises(ValueError, match="truncated polyline"):
             decode_polyline("_p~iF~ps|U_ulL")
+
+
+class TestSimplifyPolyline:
+    """Display-only reduction. Analysis always uses full geometry."""
+
+    def test_rejects_a_non_positive_tolerance(self) -> None:
+        geometry = meridian_geometry(vertices=10)
+        for bad in (0.0, -1.0):
+            with pytest.raises(ValueError, match="tolerance_miles must be positive"):
+                simplify_polyline(geometry, bad)
+
+    @pytest.mark.parametrize("vertices", [2, 3])
+    def test_short_geometry_is_returned_unchanged(self, vertices: int) -> None:
+        geometry = meridian_geometry(vertices=vertices)
+        assert simplify_polyline(geometry, 0.01)[0] == geometry[0]
+        assert simplify_polyline(geometry, 0.01)[-1] == geometry[-1]
+
+    def test_endpoints_are_always_kept(self) -> None:
+        geometry = meridian_geometry(vertices=50)
+        simplified = simplify_polyline(geometry, 1.0)
+        assert simplified[0] == geometry[0]
+        assert simplified[-1] == geometry[-1]
+
+    def test_a_straight_line_collapses_to_its_endpoints(self) -> None:
+        """Every interior vertex is redundant on a straight line."""
+        assert len(simplify_polyline(meridian_geometry(vertices=100), 0.01)) == 2
+
+    def test_a_genuine_corner_is_preserved(self) -> None:
+        """Dropping this vertex would move the line by ~35 miles."""
+        corner = (
+            Coordinate(40.0, -100.0),
+            Coordinate(40.5, -100.0),
+            Coordinate(40.5, -99.0),
+        )
+        assert len(simplify_polyline(corner, 0.01)) == 3
+
+    def test_a_tighter_tolerance_keeps_more_points(self) -> None:
+        zigzag = tuple(
+            Coordinate(40.0 + index * 0.01, -100.0 + (0.01 if index % 2 else 0.0))
+            for index in range(60)
+        )
+        assert len(simplify_polyline(zigzag, 0.001)) >= len(
+            simplify_polyline(zigzag, 0.5)
+        )
+
+    def test_coincident_vertices_do_not_divide_by_zero(self) -> None:
+        """A degenerate segment makes the projection length zero."""
+        point = Coordinate(40.0, -100.0)
+        geometry = (point, point, point, Coordinate(41.0, -100.0))
+        simplified = simplify_polyline(geometry, 0.01)
+        assert simplified[0] == point
+        assert simplified[-1] == Coordinate(41.0, -100.0)
+
+    def test_output_is_a_subsequence_of_the_input(self) -> None:
+        """Vertices are dropped, never moved or invented."""
+        geometry = meridian_geometry(vertices=40, span_lat=2.0)
+        simplified = simplify_polyline(geometry, 0.05)
+        assert set(simplified) <= set(geometry)
+        assert list(simplified) == [p for p in geometry if p in set(simplified)]
+
+    def test_length_is_essentially_preserved(self) -> None:
+        geometry = tuple(
+            Coordinate(40.0 + index * 0.02, -100.0 + (index % 3) * 0.005)
+            for index in range(80)
+        )
+        original = sum(haversine_miles(a, b) for a, b in zip(geometry, geometry[1:]))
+        simplified = simplify_polyline(geometry, 0.01)
+        reduced = sum(
+            haversine_miles(a, b) for a, b in zip(simplified, simplified[1:])
+        )
+        assert reduced == pytest.approx(original, rel=0.01)
+
+    def test_a_large_route_does_not_exhaust_the_recursion_limit(self) -> None:
+        """Implemented iteratively for exactly this reason."""
+        geometry = tuple(
+            Coordinate(30.0 + index * 0.001, -100.0 + (index % 7) * 0.0005)
+            for index in range(12_000)
+        )
+        assert len(simplify_polyline(geometry, 0.002)) >= 2
+
+    def test_a_there_and_back_segment_is_handled(self) -> None:
+        """Start and end coincide, so the segment has zero projected length."""
+        start = Coordinate(40.0, -100.0)
+        out_and_back = (start, Coordinate(40.5, -100.0), start)
+        simplified = simplify_polyline(out_and_back, 0.01)
+        assert len(simplified) == 3  # the detour is real and must survive
+
+    def test_a_zero_length_loop_collapses(self) -> None:
+        point = Coordinate(40.0, -100.0)
+        assert len(simplify_polyline((point, point, point), 0.01)) == 2

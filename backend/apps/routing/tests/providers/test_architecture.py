@@ -211,3 +211,68 @@ class TestCredentialsNeverLeak:
             provider.geocode("Denver")  # cache hit, which logs the URL
 
         assert FAKE_KEY not in caplog.text
+
+
+SERVICES = ROUTING_ROOT / "services"
+API = ROUTING_ROOT / "api"
+
+
+class TestOrchestrationDoesNotBypassTheDomain:
+    """The milestone's central risk: reimplementing a rule one layer up.
+
+    Two copies of a threshold drift, and the copy nobody tests wins in
+    production. These fail the build if the service or API layer starts
+    deciding anything the domain already decides.
+    """
+
+    def test_services_and_api_import_no_http_client(self) -> None:
+        offenders = [
+            f"{module.name} imports {name}"
+            for directory in (SERVICES, API)
+            for module in sorted(directory.glob("*.py"))
+            for name in imported_modules(module)
+            if name.split(".")[0] in {"httpx", "requests", "urllib", "socket"}
+        ]
+        assert offenders == []
+
+    def test_no_risk_threshold_is_restated_outside_the_domain(self) -> None:
+        """The assessment's numbers must appear in exactly one place."""
+        thresholds = ("24.999", "34.99", "44.99", "54.99", "0.10", "0.25", "0.50")
+        offenders: list[str] = []
+        for directory in (SERVICES, API):
+            for module in sorted(directory.glob("*.py")):
+                source = module.read_text(encoding="utf-8")
+                # Strip comments and docstrings would be over-engineering;
+                # these literals simply must not appear as code.
+                for literal in thresholds:
+                    if f"= {literal}" in source or f"> {literal}" in source:
+                        offenders.append(f"{module.name} contains {literal}")
+        assert offenders == []
+
+    def test_no_layer_above_the_domain_reimplements_ranking(self) -> None:
+        banned = ("severe_miles <", "severe_miles >", "sort(key=", "sorted(")
+        offenders: list[str] = []
+        for module in sorted(SERVICES.glob("*.py")):
+            source = module.read_text(encoding="utf-8")
+            for marker in banned:
+                if marker in source:
+                    offenders.append(f"{module.name} contains {marker!r}")
+        assert offenders == []
+
+    def test_the_service_calls_the_domain_for_every_decision(self) -> None:
+        """Positive check: the real functions are actually wired in."""
+        imported = imported_modules(SERVICES / "analysis.py")
+        assert "apps.routing.domain.checkpoints" in imported
+        assert "apps.routing.domain.aggregation" in imported
+        assert "apps.routing.domain.ranking" in imported
+
+    def test_the_api_layer_does_no_orchestration(self) -> None:
+        """Views delegate; they never talk to a provider directly."""
+        offenders = [
+            f"{module.name} imports {name}"
+            for module in sorted(API.glob("*.py"))
+            for name in imported_modules(module)
+            if name.startswith("apps.routing.providers")
+            and not name.endswith((".errors", ".factory"))
+        ]
+        assert offenders == []

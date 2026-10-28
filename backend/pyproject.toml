@@ -20,7 +20,12 @@ filterwarnings = ["error::DeprecationWarning"]
 
 [tool.coverage.run]
 branch = true
-source = ["apps/routing/domain", "apps/routing/providers"]
+source = [
+    "apps/routing/domain",
+    "apps/routing/providers",
+    "apps/routing/services",
+    "apps/routing/api",
+]
 
 [tool.coverage.report]
 show_missing = true

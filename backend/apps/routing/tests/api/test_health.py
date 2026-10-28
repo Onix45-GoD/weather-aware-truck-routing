@@ -14,7 +14,24 @@ from django.test import Client
 def test_health_endpoint_responds() -> None:
     response = Client().get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "milestone": 1}
+    assert response.json()["status"] == "ok"
+
+
+def test_health_reports_configured_providers() -> None:
+    """Useful for confirming a deployment picked up its configuration."""
+    providers = Client().get("/api/v1/health").json()["providers"]
+    assert set(providers) >= {"geocoding", "routing", "weather"}
+
+
+def test_health_never_exposes_a_credential() -> None:
+    """It reports key *presence*, never any part of a key's value."""
+    from django.test.utils import override_settings
+
+    with override_settings(TOMTOM_API_KEY="super-secret-value-0123456789"):
+        response = Client().get("/api/v1/health")
+
+    assert "super-secret-value" not in response.content.decode()
+    assert response.json()["providers"]["tomtom_key_configured"] is True
 
 
 def test_project_has_no_real_database_configured() -> None:

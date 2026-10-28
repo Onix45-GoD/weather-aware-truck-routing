@@ -8,23 +8,29 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections.abc import Sequence
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, pi, radians, sin, sqrt
 
 from .models import Coordinate
 
 __all__ = [
     "EARTH_RADIUS_MILES",
+    "MILES_PER_DEGREE",
     "cumulative_distances",
     "decode_polyline",
     "haversine_miles",
     "interpolate",
     "locate_distance",
     "point_at_distance",
+    "simplify_polyline",
     "total_distance_miles",
 ]
 
 #: IUGG mean Earth radius (6_371.0088 km) expressed in statute miles.
 EARTH_RADIUS_MILES = 3958.7613
+
+#: Miles per degree of latitude. Used by the local projection in
+#: :func:`simplify_polyline`; distance maths uses haversine, not this.
+MILES_PER_DEGREE = EARTH_RADIUS_MILES * pi / 180.0
 
 
 def haversine_miles(start: Coordinate, end: Coordinate) -> float:
@@ -139,6 +145,76 @@ def point_at_distance(
     """Coordinate found ``target_miles`` along the route geometry."""
     index, fraction = locate_distance(cumulative, target_miles)
     return interpolate(geometry[index], geometry[index + 1], fraction)
+
+
+def simplify_polyline(
+    geometry: Sequence[Coordinate], tolerance_miles: float
+) -> tuple[Coordinate, ...]:
+    """Reduce a polyline's vertex count, keeping its shape.
+
+    Ramer-Douglas-Peucker: a vertex survives if dropping it would move the
+    line by more than ``tolerance_miles``. Endpoints are always kept.
+
+    **Presentation only.** A real TomTom route carries ~10,700 vertices, so
+    three alternatives are ~39,000 points and about a megabyte of JSON. That
+    is far more detail than a map can draw. Analysis -- checkpoint placement,
+    ETAs, risk -- always runs on the *full* geometry; only the geometry handed
+    to a client is simplified, and the original vertex count is reported
+    alongside so nothing about the reduction is hidden.
+
+    Iterative rather than recursive: a 10,000-vertex route would otherwise
+    risk exceeding the interpreter's recursion limit.
+    """
+    if tolerance_miles <= 0:
+        raise ValueError("tolerance_miles must be positive")
+    if len(geometry) < 3:
+        return tuple(geometry)
+
+    # Project once into local miles rather than doing trigonometry per
+    # comparison -- the latter made this ~10x slower on a real 10,700-vertex
+    # route. A single reference latitude is accurate enough: across a
+    # 1,000-mile route the longitude scale varies ~4%, which at an 8-metre
+    # tolerance is a third of a millimetre.
+    reference = cos(radians(geometry[len(geometry) // 2].latitude))
+    xs = [point.longitude * reference * MILES_PER_DEGREE for point in geometry]
+    ys = [point.latitude * MILES_PER_DEGREE for point in geometry]
+
+    tolerance_sq = tolerance_miles * tolerance_miles
+    keep = [False] * len(geometry)
+    keep[0] = keep[-1] = True
+    stack: list[tuple[int, int]] = [(0, len(geometry) - 1)]
+
+    while stack:
+        start, end = stack.pop()
+        if end <= start + 1:
+            continue
+
+        ax, ay = xs[start], ys[start]
+        ex, ey = xs[end] - ax, ys[end] - ay
+        segment_sq = ex * ex + ey * ey
+
+        furthest_sq = -1.0
+        furthest_index = start
+        for index in range(start + 1, end):
+            px, py = xs[index] - ax, ys[index] - ay
+            if segment_sq == 0.0:
+                offset_sq = px * px + py * py
+            else:
+                t = (px * ex + py * ey) / segment_sq
+                t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                dx = px - t * ex
+                dy = py - t * ey
+                offset_sq = dx * dx + dy * dy
+            if offset_sq > furthest_sq:
+                furthest_sq = offset_sq
+                furthest_index = index
+
+        if furthest_sq > tolerance_sq:
+            keep[furthest_index] = True
+            stack.append((start, furthest_index))
+            stack.append((furthest_index, end))
+
+    return tuple(point for point, kept in zip(geometry, keep) if kept)
 
 
 def decode_polyline(encoded: str, precision: int = 5) -> tuple[Coordinate, ...]:

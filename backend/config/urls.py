@@ -1,17 +1,16 @@
 """Root URL configuration.
 
-Milestone 1 exposes only a health probe. The `/api/v1/analyze` endpoint is
-added in Milestone 3 once the provider adapters exist.
+    GET  /api/v1/health          liveness + which providers are configured
+    POST /api/v1/route-analysis  the full weather-aware route analysis
+
+Note on the path: Milestone 1's plan sketched this endpoint as
+`/api/v1/analyze`. It ships as `/api/v1/route-analysis`, which says what it
+returns rather than what it does. Nothing consumed the earlier name -- the
+frontend is still a scaffold -- so there is no compatibility shim to keep.
 """
 
-from django.http import HttpRequest, JsonResponse
-from django.urls import path
-
-
-def health(_request: HttpRequest) -> JsonResponse:
-    return JsonResponse({"status": "ok", "milestone": 1})
-
+from django.urls import include, path
 
 urlpatterns = [
-    path("api/v1/health", health, name="health"),
+    path("api/v1/", include("apps.routing.api.urls")),
 ]
