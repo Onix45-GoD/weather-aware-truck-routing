@@ -291,3 +291,85 @@ export interface CheckpointWeatherResponse {
   eta_beyond_horizon: boolean
   forecast_horizon_end: string | null
 }
+
+// --- POST /api/v1/corridor-forecast ------------------------------------------
+
+/** One checkpoint of the selected route, as the analysis emitted it. */
+export interface CorridorCheckpointInput {
+  index: number
+  latitude: number
+  longitude: number
+  distance_from_origin_miles: number
+}
+
+export interface CorridorForecastRequest {
+  /** The analysis's `effective_departure_at`; frame +0 is this instant. */
+  reference_at: string
+  load_weight_lb: number
+  checkpoints: CorridorCheckpointInput[]
+  route_id?: string | undefined
+  /** Display only: the response carries local renderings of each frame. */
+  timezone?: string | null | undefined
+}
+
+export interface CorridorCheckpoint extends CorridorCheckpointInput {
+  /** Forward-attributed miles this checkpoint governs; the destination owns 0. */
+  segment_miles: number
+}
+
+/** One checkpoint at one hour: the same shapes the analysis uses. */
+export interface CorridorFrameCheckpoint {
+  index: number
+  /** Null when the provider had no forecast for this point at this hour. */
+  weather: WeatherSample | null
+  risk: CheckpointRisk
+}
+
+/** The domain's risk-mile breakdown for one frame. */
+export interface CorridorFrameSummary {
+  low_miles: number
+  moderate_miles: number
+  high_miles: number
+  severe_miles: number
+  no_travel_miles: number
+  unknown_miles: number
+  average_risk: number | null
+  max_risk: RiskLevel
+  coverage_pct: number
+  blocked: boolean
+}
+
+export type CorridorUnavailableReason =
+  | 'outside_provider_horizon'
+  | 'no_measurements'
+
+export interface CorridorFrame {
+  /** Hours after `reference_at`, 0..48. */
+  hour: number
+  at: string
+  at_local: string | null
+  /** False when no checkpoint had a forecast for this instant. */
+  available: boolean
+  unavailable_reason: CorridorUnavailableReason | null
+  summary: CorridorFrameSummary
+  /** Positionally aligned with `CorridorForecastResponse.checkpoints`. */
+  checkpoints: CorridorFrameCheckpoint[]
+}
+
+export interface CorridorForecastResponse {
+  route_id: string | null
+  reference_at: string
+  reference_at_local: string | null
+  timezone: string | null
+  step_hours: number
+  horizon_hours: number
+  provider: string
+  load_weight_lb: number
+  /** What the provider actually covered; null when it covered nothing. */
+  forecast_window: { start: string | null; end: string | null }
+  checkpoints: CorridorCheckpoint[]
+  frames: CorridorFrame[]
+  available_hours: number
+  warnings: Array<{ code: string; message: string }>
+  meta: { elapsed_ms: number; checkpoints: number; frames: number }
+}

@@ -19,6 +19,7 @@ from apps.routing.providers.errors import ProviderConfigurationError, ProviderEr
 from apps.routing.providers.factory import provider_status
 from apps.routing.services.analysis import analyse_trip
 from apps.routing.services.checkpoint_weather import fetch_checkpoint_weather
+from apps.routing.services.corridor import forecast_corridor
 from apps.routing.services.errors import AnalysisError
 from apps.routing.services.weather_tiles import (
     WEATHER_TILE_LAYERS,
@@ -26,6 +27,7 @@ from apps.routing.services.weather_tiles import (
     tile_coordinates_are_valid,
 )
 
+from .corridor import CorridorForecastRequestSerializer, serialise_corridor
 from .checkpoint_weather import (
     CheckpointWeatherQuerySerializer,
     serialise_checkpoint_weather,
@@ -35,6 +37,7 @@ from .serializers import RouteAnalysisRequestSerializer, serialise_analysis
 
 __all__ = [
     "CheckpointWeatherView",
+    "CorridorForecastView",
     "HealthView",
     "RouteAnalysisView",
     "WeatherTileView",
@@ -191,3 +194,56 @@ class CheckpointWeatherView(APIView):
             return exception_to_response(exc)
 
         return Response(serialise_checkpoint_weather(result), status=status.HTTP_200_OK)
+
+
+class CorridorForecastView(APIView):
+    """`POST /api/v1/corridor-forecast` -- the 0-48 h corridor frames.
+
+    Display-only. Frame +N is `reference_at + N hours` at every checkpoint,
+    classified with the same domain functions as the analysis. It cannot
+    change the departure, the ETAs or the recommendation (D28); it is a
+    second view of the same forecast, not a second analysis.
+    """
+
+    def post(self, request: Request) -> Response:
+        serializer = CorridorForecastRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return error_response(
+                code="INVALID_REQUEST",
+                message="The corridor request could not be validated.",
+                http_status=status.HTTP_400_BAD_REQUEST,
+                details=serializer.errors,
+            )
+        data = serializer.validated_data
+
+        started = time.perf_counter()
+        try:
+            result = forecast_corridor(
+                data["reference_at"],
+                data["load_weight_lb"],
+                serializer.corridor_checkpoints(),
+            )
+        except ValueError as exc:
+            # The serializer enforces the same invariants the service does;
+            # disagreeing is a bug worth a 400 with the message, not a 500.
+            return error_response(
+                code="INVALID_REQUEST",
+                message=str(exc),
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ProviderError as exc:
+            return exception_to_response(exc)
+        except Exception as exc:  # noqa: BLE001 - deliberate catch-all
+            return exception_to_response(exc)
+
+        payload = serialise_corridor(
+            result,
+            route_id=data.get("route_id") or None,
+            zone_name=data.get("timezone"),
+        )
+        payload["meta"] = {
+            "elapsed_ms": round((time.perf_counter() - started) * 1000.0, 1),
+            "checkpoints": len(result.checkpoints),
+            "frames": len(result.frames),
+        }
+        return Response(payload, status=status.HTTP_200_OK)

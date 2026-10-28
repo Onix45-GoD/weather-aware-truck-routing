@@ -2,6 +2,9 @@
 
     GET  /api/v1/health          liveness + which providers are configured
     POST /api/v1/route-analysis  the full weather-aware route analysis
+    POST /api/v1/corridor-forecast  the selected route's checkpoints at every
+                                 hour from +0 to +48 after the analysis
+                                 reference time, classified (display only)
     GET  /api/v1/checkpoint-weather?lat=&lon=&at=
                                  observed conditions + 3-hourly forecast at
                                  one checkpoint, with the ETA slot picked out

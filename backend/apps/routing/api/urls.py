@@ -6,6 +6,7 @@ from django.urls import path
 
 from .views import (
     CheckpointWeatherView,
+    CorridorForecastView,
     HealthView,
     RouteAnalysisView,
     WeatherTileView,
@@ -16,6 +17,11 @@ app_name = "routing"
 urlpatterns = [
     path("health", HealthView.as_view(), name="health"),
     path("route-analysis", RouteAnalysisView.as_view(), name="route-analysis"),
+    path(
+        "corridor-forecast",
+        CorridorForecastView.as_view(),
+        name="corridor-forecast",
+    ),
     path(
         "checkpoint-weather",
         CheckpointWeatherView.as_view(),

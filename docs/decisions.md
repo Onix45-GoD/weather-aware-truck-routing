@@ -732,6 +732,51 @@ both DST edges, and `test_the_same_instant_expressed_two_ways_analyses_identical
 
 ---
 
+## D31. The corridor slider is reference-time frames over the same forecast — *Decision*
+
+The assessment asks for a weather heatmap along the corridor with a 0–48 h
+slider. Three readings were possible; one was chosen and the other two are
+recorded so nobody re-derives them.
+
+| Reading | What hour +*h* would mean | Why not |
+|---|---|---|
+| **Reference-time frame** (chosen) | `effective_departure_at + h` at **every** checkpoint | — |
+| ETA-shifted | each checkpoint at its *own* ETA + *h* | That is `forecast_offset_hours` — a departure shift that changes the answer (D28), not a display control |
+| Wall-clock from now | `now + h` | The analysis is anchored to departure, not to when the page is open; the two drift apart by the minute |
+
+**Source and step.** The frames are Open-Meteo's hourly series — the same
+provider, adapter, unit normalisation, de-duplication, chunking and cache the
+analysis uses — classified by the same `assess_route` and summarised by the
+same `summarise_route`. The step is one hour because the data is hourly. No
+interpolation, no synthetic hours. OpenWeatherMap's 3-hourly forecast was
+not used: it is a different model at a coarser step and the risk engine was
+never calibrated against it.
+
+**Horizon.** `HourlyForecast.sample_at` (D19) decides whether an hour exists.
+An hour outside what the provider returned is `available: false` and every
+checkpoint is UNKNOWN (D8); the frame is still returned so the slider shows
+the gap rather than silently reusing the nearest hour. `forecast_window`
+reports what the provider actually covered.
+
+**Resolution.** The band is drawn at checkpoint resolution with forward
+attribution (D6), the same convention as the ETA risk line. It is a sampled
+visualisation and the documentation says so; it is not a radar field and
+does not claim spatial precision the data lacks.
+
+**Isolation.** The endpoint is read-only over the analysis's inputs. It
+cannot change the departure, the ETAs or the recommendation; the App's
+baseline metrics are never overwritten by a frame. Tested by
+`TestBaselineIsUntouched` (API) and `never re-runs the analysis` (frontend).
+
+**Tested by** `tests/services/test_corridor.py` (49 frames, exact hour and
+checkpoint association, beginning/middle/end, missing and partial data,
+horizon edges, provider failures, cargo-weight override via the domain as
+oracle), `tests/api/test_corridor_forecast.py` (contract, validation, gzip,
+de-duplication, a request built from a real analysis response) and the
+frontend `features/corridor` suites.
+
+---
+
 ## Open items for later milestones
 
 ### Closed in Milestone 2
@@ -749,5 +794,5 @@ both DST edges, and `test_the_same_instant_expressed_two_ways_analyses_identical
 |---|---|---|
 | Provider schema drift | ongoing | A single capture is one point in time. `pytest -m live` is the drift check, and it is non-deterministic by nature. |
 | Checkpoint count ceiling | 3 | A 2,000-mile route at 10-mile spacing is 200 checkpoints × 3 routes. Cap and auto-coarsen with a notice rather than time out. |
-| Provider attribution in the UI | 6 | Open-Meteo is CC-BY 4.0 and TomTom requires attribution; both need a visible credit once there is a UI to put it in. |
+| Provider attribution in the UI | 6 | Partly done: the map credits CARTO/OpenStreetMap and OpenWeatherMap, the timeline and checkpoint panel name Open-Meteo. A footer credit for TomTom is still to add. |
 | Fixture-mode labelling in the UI | 6 | When the offline providers are active the interface must say so, so synthetic weather is never mistaken for a forecast. |

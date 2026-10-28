@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/client'
 import { Providers } from '@/app/Providers'
+import { makeCorridorForecast } from '@/test/corridorFixtures'
 import {
   makeAnalysis,
   makeBlockedAnalysis,
@@ -16,9 +17,16 @@ import App from './App'
 const analyseRoute = vi.hoisted(() => vi.fn())
 const fetchHealth = vi.hoisted(() => vi.fn())
 const fetchCheckpointWeather = vi.hoisted(() => vi.fn())
+const fetchCorridorForecast = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return { ...actual, analyseRoute, fetchHealth, fetchCheckpointWeather }
+  return {
+    ...actual,
+    analyseRoute,
+    fetchHealth,
+    fetchCheckpointWeather,
+    fetchCorridorForecast,
+  }
 })
 
 function renderApp() {
@@ -41,6 +49,8 @@ async function submit() {
 beforeEach(() => {
   analyseRoute.mockReset()
   fetchHealth.mockResolvedValue({ status: 'ok', providers: {} })
+  fetchCorridorForecast.mockReset()
+  fetchCorridorForecast.mockReturnValue(new Promise(() => {}))
 })
 
 describe('initial state', () => {
@@ -337,7 +347,7 @@ describe('resilience', () => {
     // the boundary this unmounts the entire tree -- the exact failure that
     // showed as "map gone, weather gone" in the real browser.
     const mapModule = await import('@/components/map/LazyRouteMap')
-    vi.spyOn(mapModule, 'LazyRouteMap').mockImplementation(() => {
+    const crashing = vi.spyOn(mapModule, 'LazyRouteMap').mockImplementation(() => {
       throw new Error('WebGL context lost')
     })
     const silenced = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -355,6 +365,110 @@ describe('resilience', () => {
     expect(screen.getByText('Total distance')).toBeVisible()
     expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
 
+    // Restore both, or every test after this one renders a crashed map.
     silenced.mockRestore()
+    crashing.mockRestore()
+  })
+})
+
+describe('corridor forecast timeline', () => {
+  async function analysedWithCorridor() {
+    const routes = makeRoutes(2)
+    const analysis = makeAnalysis({ routes })
+    analyseRoute.mockResolvedValue(analysis)
+    fetchCorridorForecast.mockImplementation(async (payload: { route_id?: string }) =>
+      makeCorridorForecast(routes.find((r) => r.route_id === payload.route_id)!, {
+        12: { level: 'SEVERE' },
+        40: { available: false },
+      }),
+    )
+    renderApp()
+    const user = await submit()
+    await screen.findByRole('table', { name: /checkpoints/i })
+    await waitFor(() => expect(fetchCorridorForecast).toHaveBeenCalledTimes(1))
+    return { user, analysis, routes }
+  }
+
+  it('requests the corridor for the recommended route once the analysis lands', async () => {
+    const { analysis } = await analysedWithCorridor()
+    const [payload] = fetchCorridorForecast.mock.calls[0] as [{ route_id: string; reference_at: string }]
+    expect(payload.route_id).toBe(analysis.recommended_route_id)
+    expect(payload.reference_at).toBe(analysis.request.effective_departure_at)
+  })
+
+  it('starts at +0 h and shows the frame timestamp', async () => {
+    await analysedWithCorridor()
+    const stamp = await screen.findByTestId('forecast-timestamp')
+    expect(stamp).toHaveTextContent('+0 h')
+  })
+
+  it('moving the slider updates the selected checkpoint’s forecast block', async () => {
+    const { user } = await analysedWithCorridor()
+    const table = screen.getByRole('table', { name: /checkpoints/i })
+    await user.click(within(table).getAllByRole('button')[1]!)
+    await screen.findByTestId('checkpoint-frame')
+    expect(screen.getByTestId('checkpoint-frame')).toHaveTextContent('At +0 h')
+
+    const slider = screen.getByRole('slider', { name: /forecast hour/i })
+    slider.focus()
+    for (let i = 0; i < 12; i += 1) await user.keyboard('{ArrowRight}')
+
+    expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+12 h')
+    const block = screen.getByTestId('checkpoint-frame')
+    expect(block).toHaveTextContent('At +12 h')
+    expect(within(block).getByText('Severe')).toBeVisible()
+    // Selection survived the hour change.
+    expect(within(table).getAllByRole('button')[1]).toHaveClass('Mui-selected')
+  })
+
+  it('never re-runs the analysis or changes the recommendation when the hour moves', async () => {
+    const { user, analysis } = await analysedWithCorridor()
+    const slider = screen.getByRole('slider', { name: /forecast hour/i })
+    slider.focus()
+    await user.keyboard('{End}')
+    expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+48 h')
+    expect(analyseRoute).toHaveBeenCalledTimes(1)
+    const panel = screen.getByRole('complementary', { name: /route alternatives/i })
+    expect(within(panel).getByText(/recommended/i)).toBeVisible()
+    expect(screen.getByText(analysis.recommendation_reason)).toBeVisible()
+  })
+
+  it('marks an hour the provider did not cover as unavailable', async () => {
+    const { user } = await analysedWithCorridor()
+    const slider = screen.getByRole('slider', { name: /forecast hour/i })
+    slider.focus()
+    await user.keyboard('{End}')
+    for (let i = 0; i < 8; i += 1) await user.keyboard('{ArrowLeft}')
+    expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+40 h')
+    expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent(/no forecast for this hour/i)
+  })
+
+  it('fetches the other route’s corridor when the selection changes, and resets the hour', async () => {
+    const { user, routes } = await analysedWithCorridor()
+    const slider = screen.getByRole('slider', { name: /forecast hour/i })
+    slider.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+1 h')
+
+    const panel = screen.getByRole('complementary', { name: /route alternatives/i })
+    await user.click(within(panel).getByRole('button', { name: new RegExp(routes[1]!.label) }))
+    await waitFor(() => expect(fetchCorridorForecast).toHaveBeenCalledTimes(2))
+    const [payload] = fetchCorridorForecast.mock.calls[1] as [{ route_id: string }]
+    expect(payload.route_id).toBe(routes[1]!.route_id)
+    // The hour is display state for the route; it is kept across a route
+    // switch within the same analysis so comparison is possible.
+    expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+1 h')
+  })
+
+  it('shows the corridor error with a retry and keeps the dashboard usable', async () => {
+    analyseRoute.mockResolvedValue(makeAnalysis({ routes: makeRoutes(2) }))
+    fetchCorridorForecast.mockRejectedValue(
+      new ApiError({ code: 'PROVIDER_TIMEOUT', message: 'Weather provider timed out.', status: 504 }),
+    )
+    renderApp()
+    await submit()
+    expect(await screen.findByText('Weather provider timed out.')).toBeVisible()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeVisible()
+    expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
   })
 })

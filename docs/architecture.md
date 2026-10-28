@@ -20,11 +20,11 @@
 ┌──────────────────────── Browser (React + TypeScript, Vite) ───────────────┐
 │  TripForm ──POST /api/v1/analyze──┐                                       │
 │                                   │       ┌─ RouteMap (MapLibre GL)       │
-│  TanStack Query cache ◄───────────┘       │   ├ route polylines           │
+│  fetch hooks (abort + stale) ◄────┘       │   ├ route polylines           │
 │      │                                    │   ├ checkpoint markers        │
-│      ├─ schema-validated response ────────┤   └ GPU heatmap layer         │
-│      └─ corridor frames [hour][point] ────┘                               │
-│  RoutesPanel · RiskLegend · TimeSlider (0–48 h)                           │
+│      ├─ typed response ───────────────────┤   ├ corridor band + halos     │
+│      └─ corridor frames [hour][checkpoint]┘   └ ETA risk line + dots      │
+│  RoutesPanel · RiskLegend · ForecastTimeline (0–48 h) · CheckpointDetails │
 └──────────────────────────────┬────────────────────────────────────────────┘
                                │ typed JSON, validated at both ends
 ┌──────────────────────────────▼────────────────────────────────────────────┐
@@ -56,6 +56,9 @@ all exist today. The frontend features arrive in Milestones 4–6.
 | Module | Responsibility |
 |---|---|
 | `services/analysis.py` | The whole workflow: geocode → route → checkpoints → weather → risk → rank. Carries values; decides nothing. |
+| `services/corridor.py` | The 0–48 h view: one `hourly()` call for the selected route's checkpoints, then `assess_route` + `summarise_route` per hour. Display only; cannot change a result. |
+| `services/checkpoint_weather.py` | Supplementary OpenWeatherMap conditions for one clicked checkpoint. Never an input to the domain. |
+| `services/weather_tiles.py` | OpenWeatherMap raster tiles, proxied so the key stays server-side. |
 | `services/errors.py` | `AnalysisError`, `AmbiguousLocationError` — a valid request that cannot yield a trustworthy answer. |
 | `api/serializers.py` | Request validation (including timezone resolution) and response shaping. |
 | `api/errors.py` | Typed error → HTTP status, one envelope for every failure. |
@@ -257,7 +260,7 @@ the coverage threshold are ineligible for recommendation. Ignorance cannot win.
 | Domain dependencies | **None** (stdlib) | Makes the scoring logic provable and provider-independent |
 | Frontend build | Vite 8 + React 19 + TypeScript 7 | Fast builds, strict typing |
 | Frontend tests | Vitest 5 + Testing Library 16 | Vite-native, no separate transform pipeline |
-| Map (Milestone 4) | MapLibre GL | Native GPU heatmap layer; no access token. Canvas heatmaps stutter when scrubbing a 49-frame slider |
+| Map | MapLibre GL | No access token; GeoJSON sources updated in place, so scrubbing 49 frames is a `setData`, not a re-render. The corridor is line + circle layers keyed by checkpoint, deliberately **not** MapLibre's density `heatmap` layer, which would paint spatial precision the ~47 samples do not have |
 
 ## What is deliberately absent
 

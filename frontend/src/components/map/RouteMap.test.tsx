@@ -11,6 +11,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { RiskLevel } from '@/api/types'
 import { Providers } from '@/app/Providers'
 import { makeRoutes } from '@/test/fixtures'
 
@@ -335,5 +336,54 @@ describe('weather overlay', () => {
     await waitFor(() => expect(map.styleUrl).toMatch(/dark-matter/))
     await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
     expect(map.layers.has('route-line')).toBe(true)
+  })
+})
+
+describe('corridor forecast layers', () => {
+  const levels = new Map<number, RiskLevel>([
+    [0, 'LOW'],
+    [1, 'SEVERE'],
+  ])
+
+  it('adds the band and halo layers under the route layers', async () => {
+    const map = await mountedMap({ corridorLevels: levels, corridorLabel: '+12 h · Fri 6:00 PM MST' })
+    expect(map.layers.has('corridor-band')).toBe(true)
+    expect(map.layers.has('corridor-halo')).toBe(true)
+    expect(map.sources.has('corridor-band')).toBe(true)
+    expect(map.sources.has('corridor-halo')).toBe(true)
+  })
+
+  it('shows which hour the band represents', async () => {
+    await mountedMap({ corridorLevels: levels, corridorLabel: '+12 h · Fri 6:00 PM MST' })
+    expect(screen.getByTestId('corridor-badge')).toHaveTextContent('+12 h · Fri 6:00 PM MST')
+    expect(screen.getByText(/wide band & halos/i)).toBeVisible()
+  })
+
+  it('draws no band and no badge without a frame', async () => {
+    await mountedMap({ corridorLevels: null, corridorLabel: null })
+    expect(screen.queryByTestId('corridor-badge')).not.toBeInTheDocument()
+    expect(screen.queryByText(/wide band & halos/i)).not.toBeInTheDocument()
+  })
+
+  it('writes the frame to the sources without recreating the map', async () => {
+    const { rerender } = renderMap({ corridorLevels: null })
+    await waitFor(() => expect(mapInstances).toHaveLength(1))
+    rerender(
+      <Providers>
+        <div style={{ height: 400 }}>
+          <RouteMap
+            routes={makeRoutes(2)}
+            selectedRouteId="tomtom-0"
+            selectedCheckpointIndex={null}
+            onSelectRoute={vi.fn()}
+            onSelectCheckpoint={vi.fn()}
+            corridorLevels={levels}
+            corridorLabel="+3 h"
+          />
+        </div>
+      </Providers>,
+    )
+    expect(mapInstances).toHaveLength(1)
+    expect(screen.getByTestId('corridor-badge')).toHaveTextContent('+3 h')
   })
 })

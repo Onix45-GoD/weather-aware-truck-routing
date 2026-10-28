@@ -6,7 +6,7 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { useCallback, useMemo, useState } from 'react'
 
-import type { RouteAnalysisRequest } from '@/api/types'
+import type { RiskLevel, RouteAnalysisRequest } from '@/api/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Header } from '@/components/layout/Header'
 import { Sidebar, type SectionId } from '@/components/layout/Sidebar'
@@ -16,6 +16,10 @@ import { RouteSummary } from '@/components/route/RouteSummary'
 import { CheckpointDetails } from '@/components/weather/CheckpointDetails'
 import { CheckpointTable } from '@/components/weather/CheckpointTable'
 import { WeatherProfile } from '@/components/weather/WeatherProfile'
+import { ForecastTimeline } from '@/features/corridor/ForecastTimeline'
+import { frameLabel } from '@/features/corridor/frameLabel'
+import { useCorridorForecast } from '@/features/corridor/useCorridorForecast'
+import { useForecastPlayback } from '@/features/corridor/useForecastPlayback'
 import { useHealth } from '@/features/health/useHealth'
 import { TripForm } from '@/features/route-analysis/TripForm'
 import { useRouteAnalysis } from '@/features/route-analysis/useRouteAnalysis'
@@ -31,6 +35,9 @@ export default function App() {
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<number | null>(
     null,
   )
+  // The corridor timeline's hour, 0..48. Display state only (D28): it is
+  // never sent with an analysis and never changes the recommendation.
+  const [forecastHour, setForecastHour] = useState(0)
 
   // Selection follows each new analysis: the recommended route if there is
   // one, otherwise the top-ranked, so the dashboard is never blank.
@@ -46,6 +53,7 @@ export default function App() {
       data ? (data.recommended_route_id ?? data.routes[0]?.route_id ?? null) : null,
     )
     setSelectedCheckpoint(null)
+    setForecastHour(0)
   }
 
   const selectedRoute = useMemo(
@@ -64,6 +72,40 @@ export default function App() {
   }, [selectedRoute, selectedCheckpoint])
 
   const timeZone = data?.request.departure_timezone ?? null
+
+  // --- corridor forecast ---------------------------------------------------
+  const corridor = useCorridorForecast(data, selectedRoute)
+  const frames = corridor.data?.frames ?? null
+  const playback = useForecastPlayback(frames, forecastHour, setForecastHour)
+
+  const frame = useMemo(
+    () => frames?.find((item) => item.hour === forecastHour) ?? null,
+    [frames, forecastHour],
+  )
+
+  // Risk per checkpoint for the selected hour, for the map band.
+  const corridorLevels = useMemo(() => {
+    if (!frame) return null
+    const levels = new Map<number, RiskLevel>()
+    for (const point of frame.checkpoints) levels.set(point.index, point.risk.level)
+    return levels
+  }, [frame])
+
+  const corridorLabel = frame
+    ? `+${frame.hour} h · ${frameLabel(frame.at, timeZone)}`
+    : null
+
+  const checkpointFrame = useMemo(() => {
+    if (!frame || selectedCheckpoint === null) return null
+    return {
+      hour: frame.hour,
+      at: frame.at,
+      available: frame.available,
+      checkpoint:
+        frame.checkpoints.find((point) => point.index === selectedCheckpoint) ??
+        null,
+    }
+  }, [frame, selectedCheckpoint])
 
   const handleSubmit = useCallback(
     (payload: RouteAnalysisRequest) => {
@@ -157,9 +199,22 @@ export default function App() {
                     origin={data?.origin ?? null}
                     destination={data?.destination ?? null}
                     weatherOverlaysAvailable={weatherOverlaysAvailable}
+                    corridorLevels={corridorLevels}
+                    corridorLabel={corridorLabel}
                   />
                 </ErrorBoundary>
               </div>
+
+              {data && (
+                <ForecastTimeline
+                  corridor={corridor}
+                  hour={forecastHour}
+                  onHourChange={setForecastHour}
+                  playback={playback}
+                  timeZone={timeZone}
+                  enabled={Boolean(selectedRoute)}
+                />
+              )}
 
               {data && <RouteSummary analysis={data} route={selectedRoute} />}
             </section>
@@ -209,6 +264,7 @@ export default function App() {
                   checkpoint={checkpoint}
                   timeZone={timeZone}
                   weatherDetailAvailable={weatherDetailAvailable}
+                  frame={checkpointFrame}
                 />
                 <WeatherProfile
                   route={selectedRoute}

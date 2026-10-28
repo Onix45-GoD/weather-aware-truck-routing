@@ -7,10 +7,15 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
 
-import type { AnalysedRoute, Checkpoint } from '@/api/types'
+import type {
+  AnalysedRoute,
+  Checkpoint,
+  CorridorFrameCheckpoint,
+} from '@/api/types'
 import { RiskChip } from '@/components/route/RiskChip'
 import { useCheckpointWeather } from '@/features/checkpoint-weather/useCheckpointWeather'
 import { dateTime, measurement, zoneAbbreviation } from '@/lib/format'
+import { frameLabel } from '@/features/corridor/frameLabel'
 import { PALETTE } from '@/theme/theme'
 
 import { CheckpointConditions } from './CheckpointConditions'
@@ -56,6 +61,21 @@ export interface CheckpointDetailsProps {
   timeZone?: string | null | undefined
   /** Whether the server can serve detailed conditions (OpenWeatherMap key). */
   weatherDetailAvailable?: boolean | undefined
+  /**
+   * This checkpoint at the forecast hour the timeline has selected. Null
+   * when no corridor forecast is loaded.
+   */
+  frame?: CheckpointFrame | null | undefined
+}
+
+/** The selected forecast hour, narrowed to one checkpoint. */
+export interface CheckpointFrame {
+  hour: number
+  at: string
+  /** False when the provider had nothing for this hour at all. */
+  available: boolean
+  /** Null when the frame has no entry for this checkpoint. */
+  checkpoint: CorridorFrameCheckpoint | null
 }
 
 /**
@@ -71,6 +91,7 @@ export function CheckpointDetails({
   checkpoint,
   timeZone,
   weatherDetailAvailable = false,
+  frame = null,
 }: CheckpointDetailsProps) {
   // Hooks before the early return; the hook itself is a no-op when there is
   // no checkpoint or the feature is off.
@@ -120,6 +141,10 @@ export function CheckpointDetails({
       <Typography variant="body2">
         Arrives {dateTime(checkpoint.eta, timeZone)}
         {zone ? ` ${zone}` : ''}
+      </Typography>
+      <Typography variant="caption" component="p">
+        At ETA · Open-Meteo hourly forecast · this is what the risk level and
+        recommendation are computed from
       </Typography>
 
       {weather ? (
@@ -175,6 +200,10 @@ export function CheckpointDetails({
         <Typography variant="body2">{checkpoint.risk.explanation}</Typography>
       </div>
 
+      {frame && (
+        <CheckpointFrameBlock frame={frame} timeZone={timeZone} />
+      )}
+
       <CheckpointConditions
         checkpoint={checkpoint}
         weather={detail}
@@ -182,5 +211,99 @@ export function CheckpointDetails({
         timeZone={timeZone}
       />
     </Paper>
+  )
+}
+
+
+/**
+ * The same checkpoint at the hour the corridor timeline has selected.
+ *
+ * Kept visually parallel to the ETA block above it -- same three conditions,
+ * same chip, same explanation sentence from the backend -- so a driver can
+ * compare "when I get there" with "at +N h" directly. It is the same
+ * provider and the same classifier; only the instant differs, and that is
+ * stated in the heading.
+ */
+function CheckpointFrameBlock({
+  frame,
+  timeZone,
+}: {
+  frame: CheckpointFrame
+  timeZone?: string | null | undefined
+}) {
+  const point = frame.checkpoint
+  const weather = point?.weather ?? null
+  const stamp = frameLabel(frame.at, timeZone)
+
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-lg border border-hairline p-3"
+      data-testid="checkpoint-frame"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <Typography variant="body2" component="p" className="font-semibold">
+            At +{frame.hour} h · {stamp}
+          </Typography>
+          <Typography variant="caption" component="p">
+            Selected forecast hour · Open-Meteo hourly · display only
+          </Typography>
+        </div>
+        {point && (
+          <RiskChip
+            level={point.risk.level}
+            size="medium"
+            title={point.risk.driver ? `Driven by ${point.risk.driver}` : undefined}
+          />
+        )}
+      </div>
+
+      {!frame.available || !point ? (
+        <Alert severity="info" variant="outlined" icon={<WarningAmberIcon />}>
+          The provider has no forecast for this hour here. Shown as unknown,
+          not as clear.
+        </Alert>
+      ) : weather ? (
+        <div className="grid grid-cols-3 gap-2">
+          <Condition
+            icon={<AirIcon sx={{ fontSize: 16 }} />}
+            label="Wind"
+            value={measurement(weather.wind_mph, 'mph', 0)}
+            secondary={
+              weather.wind_gust_mph !== null
+                ? `Gusts ${weather.wind_gust_mph.toFixed(0)} mph`
+                : undefined
+            }
+            unavailable={weather.wind_mph === null}
+          />
+          <Condition
+            icon={<WaterDropIcon sx={{ fontSize: 16 }} />}
+            label="Rain"
+            value={measurement(weather.rain_in_hr, 'in/hr', 2)}
+            unavailable={weather.rain_in_hr === null}
+          />
+          <Condition
+            icon={<AcUnitIcon sx={{ fontSize: 16 }} />}
+            label="Snow"
+            value={measurement(weather.snow_in_hr, 'in/hr', 2)}
+            unavailable={weather.snow_in_hr === null}
+          />
+        </div>
+      ) : (
+        <Alert severity="info" variant="outlined" icon={<WarningAmberIcon />}>
+          No measurements for this checkpoint at this hour.
+        </Alert>
+      )}
+
+      {point && point.risk.load_override_applied && (
+        <Alert severity="warning" variant="outlined">
+          Cargo weight escalated this hour&rsquo;s risk level.
+        </Alert>
+      )}
+
+      {point && (
+        <Typography variant="body2">{point.risk.explanation}</Typography>
+      )}
+    </div>
   )
 }

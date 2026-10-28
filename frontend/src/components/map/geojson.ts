@@ -170,3 +170,52 @@ export function routesBounds(
   if (!Number.isFinite(west) || !Number.isFinite(south)) return null
   return [west, south, east, north]
 }
+
+/** Risk level per checkpoint index for one corridor frame. */
+export type LevelByIndex = ReadonlyMap<number, RiskLevel>
+
+/**
+ * The corridor band for one forecast hour: the selected route's geometry
+ * split at its checkpoints, each piece carrying that hour's level.
+ *
+ * Same forward attribution as `riskSegments` -- a checkpoint governs the
+ * road ahead of it -- but coloured by the frame rather than by the ETA
+ * sample. A checkpoint the frame has no level for is UNKNOWN, never LOW.
+ */
+export function corridorSegments(
+  route: AnalysedRoute,
+  levels: LevelByIndex,
+): FeatureCollection<LineString, { index: number; level: RiskLevel }> {
+  const base = riskSegments(route)
+  return {
+    type: 'FeatureCollection',
+    features: base.features.map((feature) => ({
+      ...feature,
+      properties: {
+        index: feature.properties.index,
+        level: levels.get(feature.properties.index) ?? 'UNKNOWN',
+      },
+    })),
+  }
+}
+
+/** Halo points for one forecast hour, one per checkpoint. */
+export function corridorPoints(
+  route: AnalysedRoute,
+  levels: LevelByIndex,
+): FeatureCollection<Point, { index: number; level: RiskLevel }> {
+  return {
+    type: 'FeatureCollection',
+    features: route.checkpoints.map((checkpoint) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [checkpoint.longitude, checkpoint.latitude],
+      },
+      properties: {
+        index: checkpoint.index,
+        level: levels.get(checkpoint.index) ?? 'UNKNOWN',
+      },
+    })),
+  }
+}

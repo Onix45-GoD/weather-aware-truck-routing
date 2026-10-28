@@ -11,6 +11,8 @@ import type {
   ApiErrorBody,
   CheckpointWeatherQuery,
   CheckpointWeatherResponse,
+  CorridorForecastRequest,
+  CorridorForecastResponse,
   HealthResponse,
   RouteAnalysisRequest,
   RouteAnalysisResponse,
@@ -201,5 +203,21 @@ export function fetchCheckpointWeather(
     `/api/v1/checkpoint-weather?${params.toString()}`,
     { method: 'GET' },
     { timeoutMs: 15_000, ...options },
+  )
+}
+
+/**
+ * The 0-48 h corridor frames for one route. Display-only on the server too:
+ * it classifies the same forecast at other hours and cannot change the
+ * analysis. One request per route; the hook caches the result.
+ */
+export function fetchCorridorForecast(
+  payload: CorridorForecastRequest,
+  options: RequestOptions = {},
+): Promise<CorridorForecastResponse> {
+  return request<CorridorForecastResponse>(
+    '/api/v1/corridor-forecast',
+    { method: 'POST', body: JSON.stringify(payload) },
+    options,
   )
 }

@@ -20,7 +20,7 @@ option.
 | **3** | Orchestration + `/api/v1/route-analysis` endpoint | ✅ **Complete** |
 | **4** | Frontend dashboard: map, routes, checkpoints | ✅ **Complete** |
 | 5 | Route comparison polish + onboarding | Not started |
-| 6 | Corridor heatmap + 0–48 h forecast slider | Not started |
+| 6 | Corridor heatmap + 0–48 h forecast slider | ✅ **Complete** |
 | 7 | Hardening (failure paths, a11y, performance) | Not started |
 | 8 | Deployment + walkthrough | Not started |
 | 9 | *Optional:* AI route rationale | Not started |
@@ -150,13 +150,55 @@ the weather-tile URLs carry a credential.
 
 ## API
 
-Four endpoints. No authentication, no accounts, no database — the service
+Five endpoints. No authentication, no accounts, no database — the service
 is stateless, and two identical requests produce identical output.
 
 ### `GET /api/v1/health`
 
 Liveness, plus which providers are configured. Reports whether a credential is
 *present*, never any part of its value.
+
+### `POST /api/v1/corridor-forecast`
+
+The 0–48 h corridor view, as data. The request is the selected route's
+checkpoints sent back exactly as the analysis emitted them — index, position,
+distance — plus the analysis's `effective_departure_at` as `reference_at`,
+the cargo weight, and (display only) the trip timezone. **Geometry is not
+resent**; the corridor is sampled at checkpoints and nothing else.
+
+```jsonc
+{
+  "reference_at": "2026-11-02T13:00:00+00:00",   // analysis.request.effective_departure_at
+  "load_weight_lb": 40000,
+  "route_id": "tomtom-0",
+  "timezone": "America/Denver",
+  "checkpoints": [{ "index": 0, "latitude": 39.74, "longitude": -104.99,
+                    "distance_from_origin_miles": 0 }, ...]
+}
+```
+
+The response is **49 hourly frames**, `hour` 0…48. Frame *h* is the instant
+`reference_at + h hours` **at every checkpoint at once** — one moment across
+the whole route, which is what scrubbing a forecast means. Each frame holds
+every checkpoint's `weather` and `risk` in the same shapes the analysis uses,
+plus the domain's risk-mile `summary` for that hour (`low_miles` …
+`unknown_miles`, `coverage_pct`, `max_risk`). The measurements are the same
+Open-Meteo hourly series the analysis used, through the same adapter and
+the same `assess_route` / `summarise_route` — cargo-weight overrides
+included. Nothing is interpolated: the step is one hour because the data is.
+
+Honesty fields: `available` is false, and every checkpoint UNKNOWN, for an
+hour the provider did not cover (`unavailable_reason`:
+`outside_provider_horizon` or `no_measurements`); `forecast_window` says what
+the provider actually returned; `warnings` carries `FORECAST_HORIZON` and
+`INCOMPLETE_FORECAST`. A frame outside the horizon is still returned so the
+slider can show the gap — it is never filled with the nearest hour.
+
+This endpoint is **display only**. It cannot change the departure, the ETAs
+or the recommendation; it is a second view of the same forecast, not a
+second analysis ([D28](docs/decisions.md), [D31](docs/decisions.md)).
+Responses are gzipped (`GZipMiddleware`): ~49 × N checkpoints of repetitive
+JSON compresses to tens of KB.
 
 ### `GET /api/v1/checkpoint-weather?lat=&lon=&at=`
 
@@ -219,8 +261,9 @@ times (the two DST edges) are resolved to a documented choice and flagged in
 
 **On `forecast_offset_hours`.** This shifts the *departure*, re-running
 routing, ETAs, weather and ranking — it can change the recommendation. It is
-**not** the 0–48 h corridor heatmap slider, which is a client-side display
-control arriving in Milestone 6. See [D28](docs/decisions.md).
+**not** the 0–48 h corridor forecast slider, which is a display-only
+control over frames fetched once per route — see *Corridor forecast* under
+*Map*, and [D28](docs/decisions.md) / [D31](docs/decisions.md).
 
 #### Response shape
 
@@ -416,6 +459,50 @@ exists.
   Django proxy above. The toggle is disabled, with an explanation, when the
   server has no key; the UI learns that from `/api/v1/health` on load.
 
+### Corridor forecast (0–48 h)
+
+Under the map, a **Corridor forecast** timeline scrubs the selected route
+through the 48 hours after departure. It is a display control: it changes
+what the map band, the hour strip and the checkpoint panel show, and
+nothing else — the route, ETAs, ranking and recommendation were computed
+once by the analysis and are not touched. The caption says so.
+
+- **Time semantics.** Position +*h* is `effective_departure_at + h hours`,
+  shown as an absolute timestamp in the trip's timezone (e.g. `Mon 2 Nov,
+  6:00 PM MST`). Hour +0 is departure. The step is one hour because
+  Open-Meteo's series is hourly; no finer step is offered because it would
+  have to be invented.
+- **What is drawn.** A wide translucent **band** along the selected route and
+  a **halo** on every checkpoint, both coloured by that hour's risk level.
+  The band is the route's geometry split at its checkpoints with forward
+  attribution (a checkpoint governs the road ahead of it) — the same rule the
+  ETA risk line uses. The thin dotted risk line and the checkpoint dots stay
+  as they were: they are the **at-ETA** view, and the legend labels both.
+- **What it is not.** This is a checkpoint-sampled visualisation, not a
+  radar field. Forty-odd samples at 10/25/50-mile spacing are what the
+  analysis has; the band shows exactly that resolution and does not pretend
+  to more. It is also not the OpenWeatherMap raster overlay (which shows
+  current conditions, not the forecast).
+- **The hour strip.** One cell per hour, coloured by the worst risk anywhere
+  on the route at that hour — a legend-coloured timeline. Hours the provider
+  did not cover are hatched, counted (`3 of 49 hours unavailable`) and shown
+  as unknown; playback skips them.
+- **Playback.** Play steps through *available* hours only, from data already
+  in memory — no request per frame, no interpolation. Dragging the slider
+  pauses it; it stops at the last available hour; reset returns to +0.
+  Under `prefers-reduced-motion` the cadence slows. Timers are cleared on
+  unmount.
+- **Checkpoint panel.** Selecting a checkpoint shows, in order: its ETA
+  block (what the recommendation is computed from), its forecast at the
+  selected hour (same provider, same classifier, different instant — with the
+  backend's own explanation sentence), and the supplementary OpenWeatherMap
+  conditions. Moving the slider updates the middle block without losing the
+  selection.
+- **Data flow.** One `POST /api/v1/corridor-forecast` per selected route,
+  cached in the hook per analysis, so switching back to a route is free and
+  changing the hour never touches the network. A route change aborts an
+  in-flight request; a late response can never land on a newer selection.
+
 ### Overlay versus forecast — a deliberate distinction
 
 The mockups show a weather raster behind the route. One is now available,
@@ -512,7 +599,7 @@ cd backend
 pytest --cov --cov-report=term-missing
 ```
 
-**Backend:** 790 tests, **100% statement coverage of the domain, provider,
+**Backend:** 881 tests, **100% statement coverage of the domain, provider,
 service and API packages** (one unreachable branch arc remains, marked and explained in
 the code). No test requires an API key, network access or a live service:
 every provider interaction is mocked with `respx`, and every payload comes
@@ -523,11 +610,16 @@ that a full analysis makes **zero outbound HTTP requests**. Another asserts
 the suite never reads a developer's local `.env`, so results are identical on
 a laptop with credentials and on CI without them.
 
-**Frontend:** 85 tests (Vitest + Testing Library), covering form validation
+**Frontend:** 174 tests (Vitest + Testing Library), covering form validation
 and timezone serialisation, the request lifecycle including stale-response
 races, one/two/three alternatives, null recommendations, missing weather,
-error mapping, and map lifecycle and failure. The API client and MapLibre are
-mocked; no test touches the network.
+error mapping, map lifecycle and failure, basemap and overlay switching,
+the checkpoint weather panel, and the corridor timeline — slider labels and
+timestamps, keyboard control, loading/error/unavailable states, playback
+(skipping uncovered hours, pausing on input, timer cleanup), request
+caching and abort/stale protection, and that moving the hour never re-runs
+the analysis. The API client and MapLibre are mocked; no test touches the
+network. Corridor fixtures are synthetic and say so.
 
 ```powershell
 cd frontend

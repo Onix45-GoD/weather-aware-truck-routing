@@ -37,11 +37,17 @@ INSTALLED_APPS = [
 ]
 
 # Order matters: SecurityMiddleware first so its headers apply to everything,
+# GZipMiddleware next so it sees the final response body,
 # CorsMiddleware before CommonMiddleware so CORS headers survive redirects,
 # and XFrameOptionsMiddleware last to apply X_FRAME_OPTIONS (which is inert
 # without it).
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Early, so it compresses the final body. The corridor forecast is
+    # ~49 frames of repetitive JSON; gzip takes it from hundreds of KB to
+    # tens. No secrets or session tokens are ever in a response body, so
+    # the BREACH caveat does not apply.
+    "django.middleware.gzip.GZipMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

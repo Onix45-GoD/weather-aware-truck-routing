@@ -21,9 +21,16 @@ import realResponse from './test/real-response.json'
 const analyseRoute = vi.hoisted(() => vi.fn())
 const fetchHealth = vi.hoisted(() => vi.fn())
 const fetchCheckpointWeather = vi.hoisted(() => vi.fn())
+const fetchCorridorForecast = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return { ...actual, analyseRoute, fetchHealth, fetchCheckpointWeather }
+  return {
+    ...actual,
+    analyseRoute,
+    fetchHealth,
+    fetchCheckpointWeather,
+    fetchCorridorForecast,
+  }
 })
 
 const real = realResponse as unknown as RouteAnalysisResponse
@@ -37,6 +44,7 @@ beforeEach(() => {
   })
   analyseRoute.mockResolvedValue(real)
   fetchHealth.mockResolvedValue({ status: 'ok', providers: {} })
+  fetchCorridorForecast.mockReturnValue(new Promise(() => {}))
 })
 
 afterEach(() => {

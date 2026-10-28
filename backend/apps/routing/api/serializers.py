@@ -324,17 +324,22 @@ def _serialise_checkpoint(assessed: Any) -> dict[str, Any]:
         "is_origin": point.is_origin,
         "is_destination": point.is_destination,
         "weather": _serialise_weather(assessed.weather),
-        "risk": {
-            "level": _risk(risk.level),
-            "driver": risk.driver,
-            "base_level": _risk(risk.base_level),
-            "wind_level": _risk(risk.wind_level),
-            "rain_level": _risk(risk.rain_level),
-            "snow_level": _risk(risk.snow_level),
-            "load_override_applied": risk.load_override_applied,
-            "partial_data": risk.partial_data,
-            "explanation": risk.explanation,
-        },
+        "risk": _serialise_risk(risk),
+    }
+
+
+def _serialise_risk(risk: Any) -> dict[str, Any]:
+    """One classification, in the shape both analysis and corridor use."""
+    return {
+        "level": _risk(risk.level),
+        "driver": risk.driver,
+        "base_level": _risk(risk.base_level),
+        "wind_level": _risk(risk.wind_level),
+        "rain_level": _risk(risk.rain_level),
+        "snow_level": _risk(risk.snow_level),
+        "load_override_applied": risk.load_override_applied,
+        "partial_data": risk.partial_data,
+        "explanation": risk.explanation,
     }
 
 

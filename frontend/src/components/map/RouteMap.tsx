@@ -24,9 +24,12 @@ import {
 } from './basemaps'
 import {
   checkpointPoints,
+  corridorPoints,
+  corridorSegments,
   riskSegments,
   routeLines,
   routesBounds,
+  type LevelByIndex,
 } from './geojson'
 import { MapControls } from './MapControls'
 import '@/styles/map.css'
@@ -37,10 +40,14 @@ const SOURCES = {
   checkpoints: 'checkpoints',
   endpoints: 'endpoints',
   weather: 'weather-overlay',
+  corridorBand: 'corridor-band',
+  corridorHalo: 'corridor-halo',
 } as const
 
 const LAYERS = {
   weather: 'weather-overlay',
+  corridorBand: 'corridor-band',
+  corridorHalo: 'corridor-halo',
   routeLine: 'route-line',
   riskLine: 'risk-line',
   checkpointDots: 'checkpoint-dots',
@@ -90,6 +97,13 @@ export interface RouteMapProps {
   destination?: Place | null | undefined
   /** Whether the server can serve OpenWeatherMap tiles. Defaults to no. */
   weatherOverlaysAvailable?: boolean | undefined
+  /**
+   * Risk per checkpoint for the selected forecast hour. Null draws no
+   * corridor band -- before an analysis, while frames load, or on error.
+   */
+  corridorLevels?: LevelByIndex | null | undefined
+  /** Caption for the frame being shown, e.g. `+12 h · Fri 6:00 PM MST`. */
+  corridorLabel?: string | null | undefined
 }
 
 /**
@@ -108,6 +122,7 @@ function pushData(
   selectedRoute: AnalysedRoute | null,
   origin: Place | null | undefined,
   destination: Place | null | undefined,
+  corridorLevels: LevelByIndex | null | undefined,
 ): void {
   const lines = routeLines(routes)
   setSourceData(map, SOURCES.routes, {
@@ -130,6 +145,20 @@ function pushData(
     map,
     SOURCES.checkpoints,
     selectedRoute ? checkpointPoints(selectedRoute) : EMPTY,
+  )
+
+  // The corridor frame: same forward attribution as the risk line, coloured
+  // by the selected hour instead of by each checkpoint's ETA.
+  const showCorridor = Boolean(selectedRoute && corridorLevels)
+  setSourceData(
+    map,
+    SOURCES.corridorBand,
+    showCorridor ? corridorSegments(selectedRoute!, corridorLevels!) : EMPTY,
+  )
+  setSourceData(
+    map,
+    SOURCES.corridorHalo,
+    showCorridor ? corridorPoints(selectedRoute!, corridorLevels!) : EMPTY,
   )
 
   const endpoints = []
@@ -170,10 +199,30 @@ function addRouteLayers(map: MapLibreMap): void {
     SOURCES.risk,
     SOURCES.checkpoints,
     SOURCES.endpoints,
+    SOURCES.corridorBand,
+    SOURCES.corridorHalo,
   ]) {
     if (!map.getSource(id)) {
       map.addSource(id, { type: 'geojson', data: EMPTY })
     }
+  }
+
+  // The corridor band: wide, translucent, under everything else we draw.
+  // It is the selected forecast hour, not the ETA view -- the dotted risk
+  // line above it stays the ETA view, so both are visible at once and the
+  // legend says which is which. Butt caps keep segment boundaries crisp.
+  if (!map.getLayer(LAYERS.corridorBand)) {
+    map.addLayer({
+      id: LAYERS.corridorBand,
+      type: 'line',
+      source: SOURCES.corridorBand,
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': riskColorExpression(),
+        'line-width': 14,
+        'line-opacity': 0.32,
+      },
+    })
   }
 
   // Thin dashed lines: the basemap's roads stay readable underneath, and
@@ -218,6 +267,24 @@ function addRouteLayers(map: MapLibreMap): void {
         'line-width': 3.5,
         'line-opacity': 0.95,
         'line-dasharray': [0, 2],
+      },
+    })
+  }
+
+  // Halo per checkpoint for the selected hour, under the ETA dot so the
+  // two levels read as ring (forecast hour) and core (at ETA).
+  if (!map.getLayer(LAYERS.corridorHalo)) {
+    map.addLayer({
+      id: LAYERS.corridorHalo,
+      type: 'circle',
+      source: SOURCES.corridorHalo,
+      paint: {
+        'circle-radius': 9,
+        'circle-color': riskColorExpression(),
+        'circle-opacity': 0.35,
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': riskColorExpression(),
+        'circle-stroke-opacity': 0.9,
       },
     })
   }
@@ -297,7 +364,7 @@ function setWeatherOverlay(
       source: SOURCES.weather,
       paint: { 'raster-opacity': 0.7 },
     },
-    map.getLayer(LAYERS.routeLine) ? LAYERS.routeLine : undefined,
+    map.getLayer(LAYERS.corridorBand) ? LAYERS.corridorBand : undefined,
   )
 }
 
@@ -314,6 +381,8 @@ export function RouteMap({
   origin,
   destination,
   weatherOverlaysAvailable = false,
+  corridorLevels = null,
+  corridorLabel = null,
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -474,7 +543,15 @@ export function RouteMap({
     const map = mapRef.current
     if (!map || !ready) return
     try {
-      pushData(map, routes, selectedRouteId, selectedRoute, origin, destination)
+      pushData(
+        map,
+        routes,
+        selectedRouteId,
+        selectedRoute,
+        origin,
+        destination,
+        corridorLevels,
+      )
     } catch (error) {
       // External-system failure (MapLibre rejected the data); same exemption
       // as the constructor catch above. Only knowable by trying.
@@ -489,6 +566,7 @@ export function RouteMap({
     selectedRoute,
     origin,
     destination,
+    corridorLevels,
   ])
 
   // --- pulse ---------------------------------------------------------------
@@ -572,6 +650,16 @@ export function RouteMap({
         className="absolute inset-0"
       />
 
+      {corridorLabel && corridorLevels && (
+        <div
+          className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-hairline bg-panel/90 px-3 py-1.5 text-xs backdrop-blur-sm"
+          data-testid="corridor-badge"
+        >
+          <span className="font-semibold text-ink">Forecast band</span>
+          <span className="text-muted"> · {corridorLabel}</span>
+        </div>
+      )}
+
       {styleError && (
         <div className="absolute inset-x-3 top-3 z-10">
           <Alert severity="warning" variant="filled">
@@ -592,6 +680,7 @@ export function RouteMap({
       <MapLegend
         hasSelection={Boolean(selectedRoute)}
         overlay={weatherOverlaysAvailable ? overlay : null}
+        hasCorridor={Boolean(selectedRoute && corridorLevels)}
       />
     </div>
   )
@@ -600,9 +689,11 @@ export function RouteMap({
 function MapLegend({
   hasSelection,
   overlay,
+  hasCorridor,
 }: {
   hasSelection: boolean
   overlay: WeatherOverlayId | null
+  hasCorridor: boolean
 }) {
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-lg border border-hairline bg-panel/90 p-3 backdrop-blur-sm">
@@ -630,6 +721,14 @@ function MapLegend({
       {!hasSelection && (
         <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
           Select a route to see its checkpoints and risk colouring.
+        </p>
+      )}
+      {hasCorridor && (
+        // Two overlays, two meanings. The band is one instant across the
+        // whole route; the dots are each checkpoint at its own ETA.
+        <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
+          <strong>Wide band & halos:</strong> forecast at the selected hour.{' '}
+          <strong>Dots & dotted line:</strong> at each checkpoint's ETA.
         </p>
       )}
       {overlay && (
