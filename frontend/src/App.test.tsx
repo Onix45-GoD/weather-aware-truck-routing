@@ -327,3 +327,31 @@ describe('warnings', () => {
     ).toBeVisible()
   })
 })
+
+describe('resilience', () => {
+  it('keeps the analysis on screen when the map crashes', async () => {
+    // Replace the (mocked) map with one that throws during render. Without
+    // the boundary this unmounts the entire tree -- the exact failure that
+    // showed as "map gone, weather gone" in the real browser.
+    const mapModule = await import('@/components/map/LazyRouteMap')
+    vi.spyOn(mapModule, 'LazyRouteMap').mockImplementation(() => {
+      throw new Error('WebGL context lost')
+    })
+    const silenced = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    analyseRoute.mockResolvedValue(makeAnalysis({ routes: makeRoutes(3) }))
+    renderApp()
+    await submit()
+
+    // The map region reports its own failure...
+    expect(await screen.findByText(/the map failed to render/i)).toBeVisible()
+    expect(screen.getByText(/webgl context lost/i)).toBeVisible()
+
+    // ...and everything else is still there.
+    expect(screen.getByText('Route alternatives (3)')).toBeVisible()
+    expect(screen.getByText('Total distance')).toBeVisible()
+    expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
+
+    silenced.mockRestore()
+  })
+})

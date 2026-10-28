@@ -7,6 +7,7 @@ import Typography from '@mui/material/Typography'
 import { useCallback, useMemo, useState } from 'react'
 
 import type { RouteAnalysisRequest } from '@/api/types'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Header } from '@/components/layout/Header'
 import { Sidebar, type SectionId } from '@/components/layout/Sidebar'
 import { LazyRouteMap } from '@/components/map/LazyRouteMap'
@@ -140,16 +141,21 @@ export default function App() {
 
               {/* The map needs a real height; a percentage of an auto-height
                   grid child would collapse to zero. */}
+              {/* The boundary is what stops a MapLibre crash from unmounting
+                  the whole dashboard. If the map dies, it dies alone: the
+                  route cards, checkpoints and weather stay on screen. */}
               <div className="h-[clamp(320px,48vh,560px)] min-w-0">
-                <LazyRouteMap
-                  routes={data?.routes ?? []}
-                  selectedRouteId={selectedRouteId}
-                  selectedCheckpointIndex={selectedCheckpoint}
-                  onSelectRoute={handleSelectRoute}
-                  onSelectCheckpoint={setSelectedCheckpoint}
-                  origin={data?.origin ?? null}
-                  destination={data?.destination ?? null}
-                />
+                <ErrorBoundary label="The map">
+                  <LazyRouteMap
+                    routes={data?.routes ?? []}
+                    selectedRouteId={selectedRouteId}
+                    selectedCheckpointIndex={selectedCheckpoint}
+                    onSelectRoute={handleSelectRoute}
+                    onSelectCheckpoint={setSelectedCheckpoint}
+                    origin={data?.origin ?? null}
+                    destination={data?.destination ?? null}
+                  />
+                </ErrorBoundary>
               </div>
 
               {data && <RouteSummary analysis={data} route={selectedRoute} />}

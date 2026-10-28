@@ -4,6 +4,7 @@ import {
   Map as MapLibreMap,
   NavigationControl,
   ScaleControl,
+  type ExpressionSpecification,
   type GeoJSONSource,
   type MapLayerMouseEvent,
 } from 'maplibre-gl'
@@ -45,11 +46,30 @@ const LAYERS = {
   endpointDots: 'endpoint-dots',
 } as const
 
+const EMPTY = { type: 'FeatureCollection' as const, features: [] }
+
 /** Narrow `getSource` to a GeoJSON source before writing to it. */
 function setSourceData(map: MapLibreMap, id: string, data: unknown): void {
   const source = map.getSource(id) as GeoJSONSource | undefined
   source?.setData(data as Parameters<GeoJSONSource['setData']>[0])
 }
+
+/** Colour-by-risk expression. A factory, because MapLibre mutates nothing
+ *  but its types demand mutable arrays, and `as const` would freeze them. */
+function riskColorExpression(): ExpressionSpecification {
+  return [
+    'match',
+    ['get', 'level'],
+    'LOW', riskColor('LOW'),
+    'MODERATE', riskColor('MODERATE'),
+    'HIGH', riskColor('HIGH'),
+    'SEVERE', riskColor('SEVERE'),
+    'NO_TRAVEL', riskColor('NO_TRAVEL'),
+    riskColor('UNKNOWN'),
+  ]
+}
+
+type Place = { latitude: number; longitude: number; label: string }
 
 export interface RouteMapProps {
   routes: AnalysedRoute[]
@@ -57,11 +77,79 @@ export interface RouteMapProps {
   selectedCheckpointIndex: number | null
   onSelectRoute: (routeId: string) => void
   onSelectCheckpoint: (index: number) => void
-  origin?: { latitude: number; longitude: number; label: string } | null | undefined
-  destination?:
-    | { latitude: number; longitude: number; label: string }
-    | null
-    | undefined
+  origin?: Place | null | undefined
+  destination?: Place | null | undefined
+}
+
+/**
+ * Write every data source for the current props.
+ *
+ * Separated from the effect so one `try` covers all four writes. Any
+ * MapLibre failure in here must surface *on the map* and nowhere else: an
+ * uncaught throw inside an effect unmounts the whole application, which
+ * turns a finished analysis into a blank page and loses the message in the
+ * console.
+ */
+function pushData(
+  map: MapLibreMap,
+  routes: AnalysedRoute[],
+  selectedRouteId: string | null,
+  selectedRoute: AnalysedRoute | null,
+  origin: Place | null | undefined,
+  destination: Place | null | undefined,
+): void {
+  const lines = routeLines(routes)
+  setSourceData(map, SOURCES.routes, {
+    ...lines,
+    features: lines.features.map((feature) => ({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        isSelected: feature.properties.routeId === selectedRouteId,
+      },
+    })),
+  })
+
+  setSourceData(
+    map,
+    SOURCES.risk,
+    selectedRoute ? riskSegments(selectedRoute) : EMPTY,
+  )
+  setSourceData(
+    map,
+    SOURCES.checkpoints,
+    selectedRoute ? checkpointPoints(selectedRoute) : EMPTY,
+  )
+
+  const endpoints = []
+  if (origin) {
+    endpoints.push({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [origin.longitude, origin.latitude],
+      },
+      properties: { isOrigin: true, label: origin.label },
+    })
+  }
+  if (destination) {
+    endpoints.push({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [destination.longitude, destination.latitude],
+      },
+      properties: { isOrigin: false, label: destination.label },
+    })
+  }
+  setSourceData(map, SOURCES.endpoints, {
+    type: 'FeatureCollection',
+    features: endpoints,
+  })
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 export function RouteMap({
@@ -116,11 +204,7 @@ export function RouteMap({
       // of synchronising with an external system. It cannot be derived
       // during render, because it is only knowable by trying.
       // oxlint-disable-next-line react/set-state-in-effect
-      setStyleError(
-        error instanceof Error
-          ? error.message
-          : 'This browser could not initialise the map.',
-      )
+      setStyleError(describe(error) || 'This browser could not initialise the map.')
       return
     }
 
@@ -157,11 +241,9 @@ export function RouteMap({
     const map = mapRef.current
     if (!map || !ready) return
 
-    const empty = { type: 'FeatureCollection' as const, features: [] }
-
     for (const id of Object.values(SOURCES)) {
       if (!map.getSource(id)) {
-        map.addSource(id, { type: 'geojson', data: empty })
+        map.addSource(id, { type: 'geojson', data: EMPTY })
       }
     }
 
@@ -187,7 +269,8 @@ export function RouteMap({
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           // Unselected alternatives stay visible but recede. Ineligible ones
-          // are dashed so "blocked" reads differently from "not chosen".
+          // take the No-Travel colour so "blocked" reads differently from
+          // "not chosen".
           'line-color': [
             'case',
             ['get', 'isSelected'],
@@ -211,16 +294,7 @@ export function RouteMap({
         source: SOURCES.risk,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': [
-            'match',
-            ['get', 'level'],
-            'LOW', riskColor('LOW'),
-            'MODERATE', riskColor('MODERATE'),
-            'HIGH', riskColor('HIGH'),
-            'SEVERE', riskColor('SEVERE'),
-            'NO_TRAVEL', riskColor('NO_TRAVEL'),
-            riskColor('UNKNOWN'),
-          ],
+          'line-color': riskColorExpression(),
           'line-width': 5,
           'line-opacity': 0.95,
         },
@@ -234,16 +308,7 @@ export function RouteMap({
         source: SOURCES.checkpoints,
         paint: {
           'circle-radius': 4,
-          'circle-color': [
-            'match',
-            ['get', 'level'],
-            'LOW', riskColor('LOW'),
-            'MODERATE', riskColor('MODERATE'),
-            'HIGH', riskColor('HIGH'),
-            'SEVERE', riskColor('SEVERE'),
-            'NO_TRAVEL', riskColor('NO_TRAVEL'),
-            riskColor('UNKNOWN'),
-          ],
+          'circle-color': riskColorExpression(),
           'circle-stroke-width': 1.5,
           'circle-stroke-color': '#08111F',
         },
@@ -315,63 +380,13 @@ export function RouteMap({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-
-    const lines = routeLines(routes)
-    const withSelection = {
-      ...lines,
-      features: lines.features.map((feature) => ({
-        ...feature,
-        properties: {
-          ...feature.properties,
-          isSelected: feature.properties.routeId === selectedRouteId,
-        },
-      })),
-    }
-
-    setSourceData(map, SOURCES.routes, withSelection)
-
-    setSourceData(
-      map,
-      SOURCES.risk,
-      selectedRoute
-        ? riskSegments(selectedRoute)
-        : { type: 'FeatureCollection', features: [] },
-    )
-
-    setSourceData(
-      map,
-      SOURCES.checkpoints,
-      selectedRoute
-        ? checkpointPoints(selectedRoute)
-        : { type: 'FeatureCollection', features: [] },
-    )
-
-    {
-      const features = []
-      if (origin) {
-        features.push({
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [origin.longitude, origin.latitude],
-          },
-          properties: { isOrigin: true, label: origin.label },
-        })
-      }
-      if (destination) {
-        features.push({
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [destination.longitude, destination.latitude],
-          },
-          properties: { isOrigin: false, label: destination.label },
-        })
-      }
-      setSourceData(map, SOURCES.endpoints, {
-        type: 'FeatureCollection',
-        features,
-      })
+    try {
+      pushData(map, routes, selectedRouteId, selectedRoute, origin, destination)
+    } catch (error) {
+      // External-system failure (MapLibre rejected the data); same exemption
+      // as the constructor catch above. Only knowable by trying.
+      // oxlint-disable-next-line react/set-state-in-effect
+      setStyleError(`Could not draw the routes: ${describe(error)}`)
     }
   }, [ready, routes, selectedRouteId, selectedRoute, origin, destination])
 
@@ -398,7 +413,12 @@ export function RouteMap({
 
     const bounds = routesBounds(routes)
     if (!bounds) return
-    map.fitBounds(bounds, { padding: 56, duration: 650, maxZoom: 9 })
+    try {
+      map.fitBounds(bounds, { padding: 56, duration: 650, maxZoom: 9 })
+    } catch (error) {
+      // oxlint-disable-next-line react/set-state-in-effect
+      setStyleError(`Could not frame the routes: ${describe(error)}`)
+    }
   }, [ready, routes])
 
   return (
