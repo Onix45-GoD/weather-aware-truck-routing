@@ -5,6 +5,7 @@ persistence requirement, so `django.contrib.auth`, `sessions`, `admin` and the
 database are all absent. Adding them back would be unused surface area.
 """
 
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -65,4 +66,36 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [],
+}
+
+# --- Provider selection -----------------------------------------------------
+# Names match .env.example. `fixtures` is the default everywhere so the project
+# runs, and its whole test suite passes, with no credentials of any kind.
+ROUTING_PROVIDER = os.environ.get("ROUTING_PROVIDER", "fixtures")
+GEOCODING_PROVIDER = os.environ.get("GEOCODING_PROVIDER", "fixtures")
+WEATHER_PROVIDER = os.environ.get("WEATHER_PROVIDER", "open-meteo")
+
+# Read here, never logged and never returned by any endpoint. The provider
+# layer reports only whether a key is *present* -- see
+# `apps.routing.providers.factory.provider_status`.
+TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "")
+
+# Cache TTLs in seconds. Geocoding results are effectively static; forecasts
+# are refreshed on the half hour; routes change with traffic.
+PROVIDER_CACHE_TTL = {
+    "geocoding": int(os.environ.get("CACHE_TTL_GEOCODING", 60 * 60 * 24 * 30)),
+    "routing": int(os.environ.get("CACHE_TTL_ROUTING", 60 * 10)),
+    "weather": int(os.environ.get("CACHE_TTL_WEATHER", 60 * 30)),
+}
+
+# In-process cache. Deliberately not Redis: nothing here needs to survive a
+# restart or be shared between processes, and adding a broker would be a new
+# deployment dependency for no benefit at this scale.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "weather-routing-providers",
+        "TIMEOUT": 600,
+        "OPTIONS": {"MAX_ENTRIES": 2000, "CULL_FREQUENCY": 4},
+    }
 }
