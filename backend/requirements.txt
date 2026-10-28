@@ -7,3 +7,9 @@
 Django==6.0.9
 djangorestframework==3.18.3
 django-cors-headers==4.9.0
+
+# HTTP client for provider adapters. Synchronous usage only -- see the module
+# docstring in apps/routing/providers/http.py for why.
+# httpx 0.28.1 publishes classifiers only through 3.12, so compatibility with
+# 3.14 was verified empirically (import + live request) rather than assumed.
+httpx==0.28.1

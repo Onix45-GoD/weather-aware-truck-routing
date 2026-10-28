@@ -2,3 +2,6 @@
 pytest==9.2.0
 pytest-django==4.14.0
 pytest-cov==7.1.0
+# Mocks httpx at the transport layer, so provider contract tests never open a
+# socket. Declares support through Python 3.14.
+respx==0.23.1
