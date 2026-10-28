@@ -316,7 +316,7 @@ The glue is CSS cascade layers. `src/styles/index.css` declares the order up
 front:
 
 ```css
-@layer theme, base, mui, components, utilities;
+@layer theme, base, mui, vendor, components, utilities;
 ```
 
 and `StyledEngineProvider enableCssLayer` puts MUI's styles into the `mui`
@@ -325,6 +325,15 @@ themed MUI style **without `!important`** — which is the usual, miserable
 alternative. Tailwind v4 needs no `tailwind.config.js`: tokens live in
 `@theme` in that same stylesheet, and they are the same values the MUI theme
 uses.
+
+MapLibre's own stylesheet is imported into the `vendor` layer from
+`src/styles/map.css`, never unlayered. Unlayered CSS outranks every layer, so
+left as shipped its `.maplibregl-map { position: relative }` would override
+the Tailwind `absolute inset-0` that sizes the map container and collapse it
+to zero height — silently. The layer is deliberately not named `components`:
+Tailwind v4 treats `@layer components` as a v3 compatibility block and drops
+any rule whose class never appears in scanned source, which would discard the
+entire vendor sheet.
 
 ### Responsive behaviour
 

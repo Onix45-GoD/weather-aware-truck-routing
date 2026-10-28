@@ -1,59 +1,76 @@
-/* MapLibre overrides, kept out of the global stylesheet so vendor CSS stays
- * contained. Only appearance is touched here; layout belongs to Tailwind. */
+/* MapLibre styling, kept out of the global stylesheet so vendor CSS stays
+ * contained. Only appearance is touched here; layout belongs to Tailwind.
+ *
+ * The vendor sheet is pulled into a dedicated `vendor` layer. Shipped
+ * unlayered, it would outrank every Tailwind utility — including the
+ * `absolute inset-0` that sizes the map container — because unlayered CSS
+ * beats all layers. `.maplibregl-map { position: relative }` would then
+ * collapse the container to zero height the moment the map mounts: no error,
+ * just an empty box. Layered below `components`, the vendor defaults apply
+ * and our own layers still override them.
+ *
+ * Why `vendor` and not `components`: Tailwind v4 treats `@layer components`
+ * and `@layer utilities` as v3 compatibility blocks, turning every rule
+ * inside into an on-demand utility that is only emitted when its class name
+ * appears in scanned source. No source mentions `maplibregl-*`, so the
+ * whole sheet would be dropped and the map would ship unstyled. */
+@import 'maplibre-gl/dist/maplibre-gl.css' layer(vendor);
 
-.maplibregl-ctrl-group {
-  background: #111c2d;
-  border: 1px solid #29384d;
-  border-radius: 10px;
-  overflow: hidden;
-}
+@layer vendor {
+  .maplibregl-ctrl-group {
+    background: #111c2d;
+    border: 1px solid #29384d;
+    border-radius: 10px;
+    overflow: hidden;
+  }
 
-.maplibregl-ctrl-group button {
-  background: transparent;
-}
+  .maplibregl-ctrl-group button {
+    background: transparent;
+  }
 
-.maplibregl-ctrl-group button + button {
-  border-top: 1px solid #29384d;
-}
+  .maplibregl-ctrl-group button + button {
+    border-top: 1px solid #29384d;
+  }
 
-.maplibregl-ctrl-group button:hover {
-  background: #1a2a40;
-}
+  .maplibregl-ctrl-group button:hover {
+    background: #1a2a40;
+  }
 
-.maplibregl-ctrl-group button span {
-  filter: invert(1) brightness(1.6);
-}
+  .maplibregl-ctrl-group button span {
+    filter: invert(1) brightness(1.6);
+  }
 
-/* Attribution is a condition of using the free basemap tiles. It is restyled
- * for contrast, never hidden. */
-.maplibregl-ctrl-attrib {
-  background: rgba(17, 28, 45, 0.85);
-  color: #94a3b8;
-  font-size: 11px;
-  border-radius: 6px;
-}
+  /* Attribution is a condition of using the free basemap tiles. It is
+   * restyled for contrast, never hidden. */
+  .maplibregl-ctrl-attrib {
+    background: rgba(17, 28, 45, 0.85);
+    color: #94a3b8;
+    font-size: 11px;
+    border-radius: 6px;
+  }
 
-.maplibregl-ctrl-attrib a {
-  color: #94a3b8;
-}
+  .maplibregl-ctrl-attrib a {
+    color: #94a3b8;
+  }
 
-.maplibregl-ctrl-scale {
-  background: rgba(17, 28, 45, 0.85);
-  border-color: #29384d;
-  color: #94a3b8;
-  border-radius: 4px;
-}
+  .maplibregl-ctrl-scale {
+    background: rgba(17, 28, 45, 0.85);
+    border-color: #29384d;
+    color: #94a3b8;
+    border-radius: 4px;
+  }
 
-.maplibregl-popup-content {
-  background: #111c2d;
-  border: 1px solid #29384d;
-  border-radius: 10px;
-  color: #f1f5f9;
-  font-size: 12px;
-  padding: 10px 12px;
-}
+  .maplibregl-popup-content {
+    background: #111c2d;
+    border: 1px solid #29384d;
+    border-radius: 10px;
+    color: #f1f5f9;
+    font-size: 12px;
+    padding: 10px 12px;
+  }
 
-.maplibregl-popup-tip {
-  border-top-color: #111c2d;
-  border-bottom-color: #111c2d;
+  .maplibregl-popup-tip {
+    border-top-color: #111c2d;
+    border-bottom-color: #111c2d;
+  }
 }

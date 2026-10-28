@@ -19,7 +19,6 @@ import {
   routeLines,
   routesBounds,
 } from './geojson'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import '@/styles/map.css'
 
 /**

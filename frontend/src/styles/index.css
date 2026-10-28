@@ -12,7 +12,7 @@
  * MUI is only placed in the `mui` layer because `StyledEngineProvider
  * enableCssLayer` is set in the provider tree — see `app/Providers.tsx`.
  * Without that flag MUI emits unlayered styles, which beat *all* layers. */
-@layer theme, base, mui, components, utilities;
+@layer theme, base, mui, vendor, components, utilities;
 
 @import 'tailwindcss';
 

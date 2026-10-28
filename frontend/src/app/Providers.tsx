@@ -23,7 +23,7 @@ import { theme } from '@/theme/theme'
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <StyledEngineProvider enableCssLayer>
-      <GlobalStyles styles="@layer theme, base, mui, components, utilities;" />
+      <GlobalStyles styles="@layer theme, base, mui, vendor, components, utilities;" />
       <ThemeProvider theme={theme} defaultMode="dark">
         <CssBaseline enableColorScheme />
         {children}
