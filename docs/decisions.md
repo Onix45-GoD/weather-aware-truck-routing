@@ -547,15 +547,81 @@ reason it was found at all.
 
 ---
 
-## D26. No real TomTom fixture — *Unresolved limitation*
+## D26. No real TomTom fixture — *Closed 2026-10-28*
 
-No TomTom API key was available for this milestone, so every TomTom fixture is
-**synthetic**, modelled on the documented response schema. The adapter is
-verified against documentation, not against observed output.
+Milestone 2 was initially written without a TomTom key, so every TomTom
+fixture was synthetic and the adapter was verified against documented schema
+rather than observed output.
 
-Before relying on this in production, one live call should be recorded with
-`TOMTOM_API_KEY=... pytest -m live` and saved as a `real_*.json` fixture. Until
-that happens the limitation stands and is not claimed to be resolved.
+**Genuine responses were captured on 2026-10-28T16:03:21Z** with
+`backend/scripts/capture_tomtom_fixtures.py`, and the limitation is closed.
+
+What the capture established:
+
+- TomTom returned **3 distinct truck routes** for Denver to Chicago
+  (1,004 / 1,142 / 1,315 mi). The count was not padded, and nothing was
+  de-duplicated.
+- **Every route has exactly one leg**, confirming D24 from observed data
+  rather than inference: ETAs correctly fall back to the documented
+  distance-proportional model.
+- The `score` field is not a confidence. See **D27** — a genuine defect that
+  synthetic data could not have surfaced.
+
+The capture script drives the real adapter and records the response through an
+httpx event hook, so a fixture is by construction exactly what the production
+path receives. Only response bodies are stored, never request URLs (which
+carry the key as a query parameter), and each body is scanned for the key
+before being written. With no key set it explains what to do and exits
+non-zero; it never invents data.
+
+`test_tomtom_real_fixtures.py` replays the captures through `respx`, so the
+contract tests stay offline and keyless.
+
+**What this does and does not prove.** The adapter now parses what TomTom
+actually sends on the happy path. It does **not** make the integration
+production-ready: there is no load testing, no observed behaviour at quota
+limits, no long-term schema-drift monitoring, and a single capture is one
+point in time. The `-m live` tests remain the drift check, and they are
+non-deterministic by nature.
+
+## D27. TomTom's `score` is not a confidence — *Defect found and fixed*
+
+Found by the genuine capture, and invisible to every synthetic test before it.
+
+TomTom's published documentation describes the geocoding result's top-level
+`score` as *"Relevance score (0–1 scale, where 1 is perfect match)"*. The real
+API disagrees. An exact match for "Denver, CO" returns:
+
+```json
+{ "score": 4.7333083153, "matchConfidence": { "score": 1 } }
+```
+
+`score` is an **unbounded relevance ranking**, useful only for ordering
+several results against each other. `matchConfidence.score` is the real 0–1
+confidence.
+
+**Why it mattered.** The adapter exposed `score` as `GeocodeResult.confidence`
+— a field whose name promises a 0–1 value. Any later threshold such as
+`confidence > 0.8` would therefore pass for *every* result, including bad
+geocodes, silently defeating a check written to catch exactly those.
+
+**The fix.** `_match_confidence()` reads `matchConfidence.score`, and returns
+`None` when it is absent or outside 0–1 rather than substituting a number that
+means something else. The unbounded `score` is deliberately not exposed; we
+only ever request one result, so a relative ranking has no use.
+
+**How it hid for a whole milestone.** The synthetic fixture faithfully encoded
+the documented value (`0.9947`), so every test agreed with every other test
+and all of them were wrong together. This is the precise failure mode that
+makes synthetic-only verification insufficient, and the reason D26 was tracked
+as a real limitation rather than waved through. The synthetic fixture now
+carries the observed shape.
+
+**Tested by** `TestConfidenceSemantics` (synthetic, including rejection of
+out-of-range and non-numeric values) and
+`test_the_genuine_score_is_not_a_zero_to_one_confidence`, which fails if a
+future capture ever makes the documented claim true — a signal to revisit the
+workaround rather than leave it in place forever.
 
 ---
 
@@ -565,6 +631,7 @@ that happens the limitation stands and is not claimed to be resolved.
 
 | Item | Outcome |
 |---|---|
+| Real TomTom fixture | ✅ **Resolved — D26.** Captured 2026-10-28; 3 distinct routes, single leg each. Surfaced a real defect (D27). |
 | Verify `snowfall` unit under an imperial request | ✅ **Resolved — D17.** Verified against live responses, not documentation: `snowfall` is snow depth, and `precipitation_unit=inch` returns inches of depth. No conversion needed on the happy path. |
 | Fewer than three alternatives returned | ✅ **Resolved — D23.** What exists is returned with an explicit notice; counts are never padded. A synthesised avoid-tolls variant remains a possible future enhancement, not a requirement. |
 | Forecast-time matching | ✅ **Resolved — D19.** Nearest hour, ties round up, out-of-horizon returns UNKNOWN. |
@@ -573,7 +640,7 @@ that happens the limitation stands and is not claimed to be resolved.
 
 | Item | Milestone | Note |
 |---|---|---|
-| Real TomTom fixture | 3 | **D26.** No key was available, so every TomTom fixture is synthetic and the adapter is verified against documentation rather than observed output. One live capture closes it. |
+| Provider schema drift | ongoing | A single capture is one point in time. `pytest -m live` is the drift check, and it is non-deterministic by nature. |
 | Checkpoint count ceiling | 3 | A 2,000-mile route at 10-mile spacing is 200 checkpoints × 3 routes. Cap and auto-coarsen with a notice rather than time out. |
 | Provider attribution in the UI | 6 | Open-Meteo is CC-BY 4.0 and TomTom requires attribution; both need a visible credit once there is a UI to put it in. |
 | Fixture-mode labelling in the UI | 6 | When the offline providers are active the interface must say so, so synthetic weather is never mistaken for a forecast. |

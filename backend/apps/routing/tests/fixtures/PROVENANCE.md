@@ -118,12 +118,72 @@ Not provider output. Written to exercise paths real responses rarely contain.
 
 ---
 
+## `tomtom/real_*.json` — genuine captured responses
+
+| File | Source |
+|---|---|
+| `real_geocode_denver.json` | `GET https://api.tomtom.com/search/2/geocode/{query}.json` |
+| `real_route_denver_chicago.json` | `GET https://api.tomtom.com/routing/1/calculateRoute/{locations}/json` |
+| `real_capture_provenance.json` | machine-written record of the capture |
+
+- **Captured:** 2026-10-28T16:03:21Z
+- **Captured by:** `backend/scripts/capture_tomtom_fixtures.py`
+- **Credentials:** none stored. Only response bodies were written; request
+  URLs are not, because the key travels as a query parameter. The URLs
+  recorded in `real_capture_provenance.json` are redacted to `key=***`, and
+  every body was scanned for the key before being written.
+- **Modifications:** none. These are unmodified response bodies.
+
+**Requests**
+
+```
+real_geocode_denver.json
+  query = "Denver, CO"   limit = 1
+
+real_route_denver_chicago.json
+  origin      = 39.7392,-104.9903   (Denver, CO)
+  destination = 41.8781,-87.6298    (Chicago, IL)
+  travelMode  = truck      maxAlternatives = 2
+  alternativeType = anyRoute        routeRepresentation = polyline
+  traffic = true           departAt = 2026-10-28T18:00:00+00:00
+  vehicle parameters: NONE — cargo weight is never sent as vehicleWeight (D16)
+```
+
+### What the genuine capture established
+
+**TomTom returned 3 distinct truck routes** for Denver → Chicago, none
+de-duplicated:
+
+| Route | Distance | Duration | Geometry points | Legs |
+|---|---|---|---|---|
+| 0 | 1,616,163 m (1,004 mi) | 50,066 s (13.9 h) | 10,759 | 1 |
+| 1 | 1,838,660 m (1,142 mi) | 56,774 s (15.8 h) | 13,168 | 1 |
+| 2 | 2,117,307 m (1,315 mi) | 67,556 s (18.8 h) | 15,216 | 1 |
+
+Two findings that only real data could produce:
+
+1. **Every route has exactly one leg**, confirming D24's assumption with
+   observed data rather than inference: `calculateRoute` with no intermediate
+   waypoints supplies no per-segment timing, so ETAs correctly fall back to
+   the domain's documented distance-proportional model.
+2. **The top-level `score` is not a 0-1 confidence.** TomTom's documentation
+   describes it as one; the real response returns `4.7333083153` for an exact
+   match, alongside `matchConfidence: {"score": 1}`. This exposed a genuine
+   defect — see D27. The synthetic fixture had encoded the
+   documented-but-wrong assumption and was corrected to match reality.
+
+**Note on size.** `real_route_denver_chicago.json` is ~4.2 MB: three routes at
+full provider geometry resolution. It is stored unmodified rather than
+downsampled, because a trimmed body would no longer be the thing the adapter
+actually has to parse.
+
+---
+
 ## `tomtom/synthetic_*.json` — hand-written
 
-**No genuine TomTom response is included: no API key was available for this
-milestone.** These are modelled on the documented response schema
-(docs.tomtom.com, checked 2026-10-28) and are explicitly *not* presented as
-real provider output.
+Modelled on the documented response schema (docs.tomtom.com, checked
+2026-10-28), and corrected against the genuine capture above where the two
+disagreed. These are explicitly *not* presented as real provider output.
 
 | File | Purpose |
 |---|---|
@@ -138,16 +198,32 @@ real provider output.
 | `synthetic_route_empty.json` | No routes — must raise `RoutingNoRoutesError` |
 | `synthetic_route_malformed.json` | Non-numeric `lengthInMeters` |
 
-### Consequence of having no real TomTom fixture
+### The adapter is now verified against observed output
 
-The adapter is verified against the documented schema, not against observed
-output. Field names, the `results`/`routes` shapes and the `maxAlternatives`
-behaviour come from documentation. Before relying on this in production, a
-single live call should be recorded with
-`TOMTOM_API_KEY=... pytest -m live` and saved here as `real_*.json`. Until
-that happens, this limitation stands and is not claimed to be resolved.
+The limitation recorded in D26 is **closed**. `test_tomtom_real_fixtures.py`
+replays the captured bodies through `respx` -- offline, no credential needed
+-- and asserts geocoding parsing, alternative handling, geometry decoding,
+distance/duration normalisation, malformed-field behaviour, confidence
+semantics, and that no vehicle-weight parameter is ever sent.
 
----
+The synthetic fixtures still earn their place: they cover failure shapes a
+healthy API will not produce on demand (empty results, malformed summaries,
+truncated polylines, duplicate alternatives). The real fixtures prove the
+happy path matches reality; the synthetic ones prove the error paths work.
+
+### Re-capturing
+
+```powershell
+cd backend
+$env:TOMTOM_API_KEY = "..."
+python scripts/capture_tomtom_fixtures.py
+```
+
+The script drives the real adapter and records the response via an httpx
+event hook, so a fixture is by construction exactly what the production path
+receives. With no key set it explains what to do and exits non-zero; it never
+invents data. Re-capturing overwrites the `real_*` files and rewrites
+`real_capture_provenance.json`, so update the capture date above to match.
 
 ## Regenerating
 
