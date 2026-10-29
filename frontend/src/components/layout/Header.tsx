@@ -1,7 +1,9 @@
 import CloudQueueIcon from '@mui/icons-material/CloudQueue'
+import HelpOutlineIcon from '@mui/icons-material/HelpOutlined'
 import TuneIcon from '@mui/icons-material/Tune'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 
@@ -12,9 +14,11 @@ export interface HeaderProps {
   analysis: RouteAnalysisResponse | null
   /** Opens the trip drawer. Only rendered below `lg`. */
   onOpenTripForm: () => void
+  /** Opens the "How to read this" guide. */
+  onOpenHelp: () => void
 }
 
-export function Header({ analysis, onOpenTripForm }: HeaderProps) {
+export function Header({ analysis, onOpenTripForm, onOpenHelp }: HeaderProps) {
   const providers = analysis?.meta.providers
 
   return (
@@ -53,6 +57,12 @@ export function Header({ analysis, onOpenTripForm }: HeaderProps) {
             />
           </Tooltip>
         )}
+
+        <Tooltip title="How to read this dashboard">
+          <IconButton size="small" aria-label="How to read this dashboard" onClick={onOpenHelp}>
+            <HelpOutlineIcon />
+          </IconButton>
+        </Tooltip>
 
         <Button
           variant="outlined"

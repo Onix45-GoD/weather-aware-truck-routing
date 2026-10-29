@@ -40,6 +40,7 @@ async function submit() {
 }
 
 beforeEach(() => {
+  window.localStorage.clear()
   analyseRoute.mockReset()
   fetchPlaceSuggestions.mockResolvedValue({ query: '', suggestions: [] })
   fetchCorridorForecast.mockReset()
@@ -466,5 +467,65 @@ describe('corridor forecast timeline', () => {
     expect(await screen.findByText('Weather provider timed out.')).toBeVisible()
     expect(screen.getByRole('button', { name: /retry/i })).toBeVisible()
     expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
+  })
+})
+
+describe('onboarding', () => {
+  it('shows the guide on first visit and hides it after an analysis', async () => {
+    analyseRoute.mockResolvedValue(makeAnalysis())
+    renderApp()
+    expect(screen.getByTestId('onboarding')).toBeVisible()
+    await submit()
+    await screen.findByText('Total distance')
+    expect(screen.queryByTestId('onboarding')).not.toBeInTheDocument()
+  })
+
+  it('runs a real analysis from "Try an example trip" and fills the form', async () => {
+    analyseRoute.mockResolvedValue(makeAnalysis())
+    renderApp()
+    await userEvent.setup().click(screen.getByRole('button', { name: /try an example trip/i }))
+    await waitFor(() => expect(analyseRoute).toHaveBeenCalledTimes(1))
+    const [payload] = analyseRoute.mock.calls[0] as [{ origin: string; departure_timezone: string; departure_at: string }]
+    expect(payload.origin).toBe('Denver, CO')
+    expect(payload.departure_timezone).toBe('America/Denver')
+    expect(payload.departure_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:00$/)
+    expect(screen.getByRole('combobox', { name: 'Origin' })).toHaveValue('Denver, CO')
+  })
+
+  it('stays dismissed across renders once "Got it" is pressed', async () => {
+    renderApp()
+    await userEvent.setup().click(screen.getByRole('button', { name: /got it/i }))
+    expect(screen.queryByTestId('onboarding')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('wr.onboarding.dismissed')).toBe('1')
+  })
+
+  it('reopens the guide from the header help button', async () => {
+    window.localStorage.setItem('wr.onboarding.dismissed', '1')
+    renderApp()
+    expect(screen.queryByTestId('onboarding')).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /how to read this dashboard/i }))
+    expect(await screen.findByRole('dialog', { name: /how to read this dashboard/i })).toBeVisible()
+  })
+})
+
+describe('fixture mode', () => {
+  it('warns loudly when any provider is the offline fixture', async () => {
+    analyseRoute.mockResolvedValue(
+      makeAnalysis({
+        meta: { ...makeAnalysis().meta, providers: { geocoding: 'fixtures', routing: 'fixtures', weather: 'open-meteo' } },
+      }),
+    )
+    renderApp()
+    await submit()
+    const banner = await screen.findByTestId('fixture-banner')
+    expect(banner).toHaveTextContent(/geocoding, routing came from the synthetic fixture provider/)
+  })
+
+  it('shows no banner with live providers', async () => {
+    analyseRoute.mockResolvedValue(makeAnalysis())
+    renderApp()
+    await submit()
+    await screen.findByText('Total distance')
+    expect(screen.queryByTestId('fixture-banner')).not.toBeInTheDocument()
   })
 })

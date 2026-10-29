@@ -1,5 +1,10 @@
 import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
+import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import Drawer from '@mui/material/Drawer'
 import LinearProgress from '@mui/material/LinearProgress'
 import Paper from '@mui/material/Paper'
@@ -21,7 +26,14 @@ import { frameLabel } from '@/features/corridor/frameLabel'
 import { checkpointSeries } from '@/features/corridor/series'
 import { useCorridorForecast } from '@/features/corridor/useCorridorForecast'
 import { useForecastPlayback } from '@/features/corridor/useForecastPlayback'
-import { TripForm } from '@/features/route-analysis/TripForm'
+import {
+  exampleTrip,
+  onboardingDismissed,
+  rememberOnboardingDismissed,
+} from '@/features/onboarding/exampleTrip'
+import { GuideContent } from '@/features/onboarding/GuideContent'
+import { OnboardingPanel } from '@/features/onboarding/OnboardingPanel'
+import { TripForm, type TripFormValues } from '@/features/route-analysis/TripForm'
 import { useRouteAnalysis } from '@/features/route-analysis/useRouteAnalysis'
 
 export default function App() {
@@ -29,6 +41,14 @@ export default function App() {
     useRouteAnalysis()
 
   const [tripOpen, setTripOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  // First-visit guide. Hidden for good once dismissed (per browser) and
+  // never shown over results; the header's help button reopens the
+  // same content as a dialog.
+  const [guideDismissed, setGuideDismissed] = useState(onboardingDismissed)
+  // Seeds the trip form. A new `key` remounts it with these values, which
+  // is how "Try an example trip" fills the form as well as running it.
+  const [formSeed, setFormSeed] = useState<{ key: number; values?: TripFormValues }>({ key: 0 })
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<number | null>(
     null,
@@ -107,6 +127,17 @@ export default function App() {
     [analyse],
   )
 
+  const dismissGuide = useCallback(() => {
+    rememberOnboardingDismissed()
+    setGuideDismissed(true)
+  }, [])
+
+  const runExample = useCallback(() => {
+    const example = exampleTrip()
+    setFormSeed((seed) => ({ key: seed.key + 1, values: example.values }))
+    void analyse(example.payload)
+  }, [analyse])
+
   const handleSelectRoute = useCallback((routeId: string) => {
     setSelectedRouteId(routeId)
     setSelectedCheckpoint(null)
@@ -114,11 +145,21 @@ export default function App() {
 
   const tripForm = (
     <TripForm
+      key={formSeed.key}
+      initialValues={formSeed.values}
       onSubmit={handleSubmit}
       isLoading={isLoading}
       fieldErrors={fieldErrors}
     />
   )
+
+  // Offline fixture providers synthesise routes and weather. Say so, loudly:
+  // a synthetic forecast must never be mistaken for a real one.
+  const fixtureProviders = data
+    ? Object.entries(data.meta.providers)
+        .filter(([, name]) => name === 'fixtures')
+        .map(([role]) => role)
+    : []
 
   // Warnings that are not tied to one route — coverage, DST, shortfalls.
   const globalWarnings = data?.warnings.filter((w) => !w.route_id) ?? []
@@ -141,7 +182,11 @@ export default function App() {
   return (
     <div className="flex h-full min-h-0 w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header analysis={data} onOpenTripForm={() => setTripOpen(true)} />
+        <Header
+          analysis={data}
+          onOpenTripForm={() => setTripOpen(true)}
+          onOpenHelp={() => setHelpOpen(true)}
+        />
         {isLoading && <LinearProgress />}
 
         <main className="scroll-area flex-1 p-3">
@@ -158,6 +203,23 @@ export default function App() {
             </aside>
 
             <section className="flex min-w-0 flex-col gap-3">
+              {!data && !guideDismissed && status !== 'loading' && (
+                <OnboardingPanel
+                  onExample={runExample}
+                  onDismiss={dismissGuide}
+                  exampleLoading={isLoading}
+                />
+              )}
+
+              {fixtureProviders.length > 0 && (
+                <Alert severity="warning" variant="filled" data-testid="fixture-banner">
+                  <AlertTitle>Offline fixture data</AlertTitle>
+                  {fixtureProviders.join(', ')} came from the synthetic fixture
+                  provider. These routes and this weather are not real; configure
+                  the live providers before relying on anything shown.
+                </Alert>
+              )}
+
               {error && (
                 <Alert
                   severity={error.isValidation ? 'warning' : 'error'}
@@ -288,6 +350,19 @@ export default function App() {
           )}
         </main>
       </div>
+
+      <Dialog open={helpOpen} onClose={() => setHelpOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>How to read this dashboard</DialogTitle>
+        <DialogContent dividers>
+          <GuideContent />
+        </DialogContent>
+        <DialogActions>
+          {!data && (
+            <Button onClick={() => { setHelpOpen(false); runExample() }}>Try an example trip</Button>
+          )}
+          <Button variant="contained" onClick={() => setHelpOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Below `lg` the trip form lives in a drawer rather than stealing
           width from the map. */}

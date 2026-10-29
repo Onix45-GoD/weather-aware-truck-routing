@@ -19,7 +19,7 @@ option.
 | **2** | Provider adapters (routing, geocoding, weather) | ✅ **Complete** |
 | **3** | Orchestration + `/api/v1/route-analysis` endpoint | ✅ **Complete** |
 | **4** | Frontend dashboard: map, routes, checkpoints | ✅ **Complete** |
-| 5 | Route comparison polish + onboarding | Not started |
+| 5 | Route comparison polish + onboarding | ✅ **Complete** |
 | 6 | Corridor heatmap + 0–48 h forecast slider | ✅ **Complete** |
 | 7 | Hardening (failure paths, a11y, performance) | Not started |
 | 8 | Deployment + walkthrough | Not started |
@@ -425,6 +425,18 @@ exists.
   colour so "blocked" reads differently from "not chosen".
 - If the basemap fails to load, a banner says so and the rest of the
   dashboard keeps working.
+- **Route comparison and detail.** A table lists every route in rank order
+  with the cell that decided each row outlined — taken from the backend's
+  `separated_from_previous_by`, not recomputed — and the detail panel for
+  the selected route says *why* it sits where it does, with both values
+  (“ranked 2nd: all three risk criteria tie; longer drive, +1h 49m”), a
+  miles-by-level bar, the drive window and the worst checkpoints as jump
+  targets.
+- **First visit.** A guide explains the three steps, the colours and each
+  overlay, with a *Try an example trip* button that runs a real Denver →
+  Chicago analysis and fills the form. *Got it* hides it per browser; the
+  header's help button brings it back as a dialog. When any provider is the
+  offline fixture, a banner says the routes and weather are synthetic.
 - **Click a checkpoint** (on the map or in the table) and a popup opens on
   the map at that point: ETA, the three measurements and the level the
   recommendation was computed from, and a clickable 49-cell strip of that
