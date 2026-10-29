@@ -15,16 +15,15 @@ from unittest.mock import patch
 import pytest
 from django.test import Client
 
-from apps.routing.domain.models import Coordinate
+from apps.routing.domain.models import WeatherSample
 from apps.routing.providers.base import HourlyForecast
 from apps.routing.providers.errors import ProviderTimeoutError
-from apps.routing.domain.models import WeatherSample
 
 URL = "/api/v1/corridor-forecast"
 REFERENCE = "2026-11-02T13:00:00+00:00"
 
 
-def post(payload: dict, **extra) -> "object":
+def post(payload: dict, **extra) -> object:
     return Client().post(URL, data=json.dumps(payload), content_type="application/json", **extra)
 
 

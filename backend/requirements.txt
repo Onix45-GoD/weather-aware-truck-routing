@@ -17,3 +17,6 @@ httpx==0.28.1
 # Loads backend/.env for local development. Credentials live only there
 # (gitignored); a real environment variable always wins over the file.
 python-dotenv==1.2.1
+
+# Production WSGI server (Render / Procfile). Not used by `manage.py runserver`.
+gunicorn==23.0.0

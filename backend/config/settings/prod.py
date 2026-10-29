@@ -27,3 +27,18 @@ SECURE_HSTS_SECONDS = 31_536_000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 X_FRAME_OPTIONS = "DENY"
+
+# Behind Render's (or any) reverse proxy every request arrives from the
+# proxy's address. Telling DRF how many proxies sit in front lets the
+# per-address rate limits read the real client from X-Forwarded-For
+# instead of throttling every user as one.
+REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": int(os.environ.get("NUM_PROXIES", 1))}  # noqa: F405
+
+# Access logs for the operator; the request-ID-free default is fine for a
+# single free-tier instance.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": os.environ.get("LOG_LEVEL", "INFO")},
+}

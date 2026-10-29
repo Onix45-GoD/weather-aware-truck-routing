@@ -410,9 +410,6 @@ def serialise_analysis(result: AnalysisResult) -> dict[str, Any]:
     Routes come back in ranked order, with ineligible ones included so the UI
     can show *why* an option was rejected rather than silently dropping it.
     """
-    evaluations = {
-        evaluation.route_id: evaluation for evaluation in result.ranking.evaluations
-    }
     by_id = {analysed.route.id: analysed for analysed in result.routes}
 
     ordered = [

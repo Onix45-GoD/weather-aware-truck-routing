@@ -6,8 +6,8 @@ network, reads an API key, or depends on the wall clock.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from apps.routing.domain.models import (
     Coordinate,

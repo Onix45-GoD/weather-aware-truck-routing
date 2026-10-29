@@ -26,9 +26,9 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from email.utils import parsedate_to_datetime
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 import httpx
 from django.core.cache import cache as django_cache
@@ -51,8 +51,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 #: Query parameters whose values must never be logged, cached or echoed back.
 # `appid` is OpenWeatherMap's name for its key; without it here, httpx's INFO
@@ -172,7 +170,7 @@ class RetryPolicy:
 DEFAULT_RETRY_POLICY = RetryPolicy()
 
 
-def run_bounded(
+def run_bounded[T](
     tasks: Sequence[Callable[[], T]], *, max_workers: int = 4
 ) -> list[T]:
     """Run independent callables concurrently, preserving input order.

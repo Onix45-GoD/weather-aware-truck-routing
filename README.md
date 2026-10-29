@@ -171,6 +171,39 @@ browser — a test asserts the frontend request carries no credential.
 
 ---
 
+## Deployment
+
+Two hosts, because Netlify serves static files and Django needs a Python
+process. The whole configuration is in the repo.
+
+| Part | Host | Config | What to set |
+|---|---|---|---|
+| Frontend | **Netlify** | [`netlify.toml`](netlify.toml) — base `frontend`, `npm ci && npm run build`, publish `frontend/dist`, SPA redirect, security headers | `VITE_API_BASE_URL` = the API origin (public; never a secret) |
+| Backend | **Render** (free web service) | [`backend/render.yaml`](backend/render.yaml) Blueprint, [`backend/Procfile`](backend/Procfile), gunicorn | `TOMTOM_API_KEY`, `CORS_ALLOWED_ORIGINS` = the Netlify site origin; the rest is in the Blueprint |
+
+Order: deploy the backend first (its URL is the frontend's one setting),
+then the frontend, then put the Netlify origin into the backend's
+`CORS_ALLOWED_ORIGINS`. The health check is `/api/v1/health`.
+
+**Cold starts.** Render's free tier sleeps after 15 minutes idle and takes
+30–50 s to wake. Before sharing the link, warm it with a request to
+`/api/v1/health` (or point a free cron pinger at it); the UI's loading state
+covers a slow first analysis either way.
+
+**Rate limits behind a proxy.** `config/settings/prod.py` sets DRF's
+`NUM_PROXIES` so the per-address limits read the real client from
+`X-Forwarded-For` rather than throttling every visitor as the proxy's
+single address.
+
+**Live:** _URL to be added once both deploys are up._
+
+**CI.** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs ruff,
+the Django check and pytest for the backend, and typecheck, lint, Vitest and
+the production build for the frontend, on every push and pull request. No
+job needs a key or the network.
+
+---
+
 ## API
 
 Four endpoints. No authentication, no accounts, no database — the service

@@ -10,10 +10,9 @@ Fully offline -- the package conftest forces fixture providers.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
-import httpx
 import pytest
 import respx
 from django.test import Client
@@ -34,7 +33,7 @@ from apps.routing.services.errors import AmbiguousLocationError
 URL = "/api/v1/route-analysis"
 
 
-def post(payload: dict) -> "object":
+def post(payload: dict) -> object:
     return Client().post(URL, data=json.dumps(payload), content_type="application/json")
 
 
@@ -442,8 +441,8 @@ class TestNoSafeRouteIsNotAnError:
         Returning 5xx here would make an outage and a blizzard look the same
         to the client.
         """
-        from apps.routing.providers.fixtures import FixtureWeatherProvider
         from apps.routing.domain.models import WeatherSample
+        from apps.routing.providers.fixtures import FixtureWeatherProvider
 
         class Blizzard(FixtureWeatherProvider):
             def _sample(self, coordinate, moment, index):  # type: ignore[override]
@@ -467,8 +466,8 @@ class TestNoSafeRouteIsNotAnError:
         assert any(w["code"] == "NO_ELIGIBLE_ROUTE" for w in body["warnings"])
 
     def test_blocked_routes_explain_themselves(self, valid_payload) -> None:
-        from apps.routing.providers.fixtures import FixtureWeatherProvider
         from apps.routing.domain.models import WeatherSample
+        from apps.routing.providers.fixtures import FixtureWeatherProvider
 
         class Blizzard(FixtureWeatherProvider):
             def _sample(self, coordinate, moment, index):  # type: ignore[override]

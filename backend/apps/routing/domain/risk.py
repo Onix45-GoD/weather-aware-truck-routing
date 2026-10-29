@@ -298,15 +298,15 @@ def assess_checkpoint(
 
 
 def _format_wind(value: float) -> str:
-    return "{0:.1f} mph".format(value)
+    return f"{value:.1f} mph"
 
 
 def _format_rate(value: float) -> str:
-    return "{0:.2f} in/hr".format(value)
+    return f"{value:.2f} in/hr"
 
 
 def _format_pounds(value: float) -> str:
-    return "{0:,.0f} lb".format(value)
+    return f"{value:,.0f} lb"
 
 
 def _title(level: RiskLevel) -> str:

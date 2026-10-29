@@ -1,0 +1,36 @@
+# Render Blueprint for the Django API. Import it from the Render dashboard
+# ("New > Blueprint", point at this repo); the two `sync: false` values are
+# prompted for and never stored in the repo.
+services:
+  - type: web
+    name: weather-routing-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.14"
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: weather-routing-api.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        # The Netlify site origin(s), comma-separated. Set after the frontend deploys.
+        sync: false
+      - key: TOMTOM_API_KEY
+        sync: false
+      - key: ROUTING_PROVIDER
+        value: tomtom
+      - key: GEOCODING_PROVIDER
+        value: tomtom
+      - key: WEATHER_PROVIDER
+        value: open-meteo
+      - key: TRUCK_TARE_WEIGHT_LB
+        value: "35000"
+      - key: WEB_CONCURRENCY
+        value: "2"

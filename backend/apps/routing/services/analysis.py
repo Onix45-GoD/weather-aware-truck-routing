@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from math import ceil
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from math import ceil
 from typing import Final
 
 from django.conf import settings

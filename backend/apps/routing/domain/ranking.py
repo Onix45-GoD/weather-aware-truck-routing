@@ -115,9 +115,7 @@ def _ineligibility_reasons(
     if metrics.blocked:
         if metrics.no_travel_miles > 0:
             reasons.append(
-                "No Travel conditions over {0:.1f} mi of this route".format(
-                    metrics.no_travel_miles
-                )
+                f"No Travel conditions over {metrics.no_travel_miles:.1f} mi of this route"
             )
         else:
             reasons.append(
@@ -128,8 +126,8 @@ def _ineligibility_reasons(
         reasons.append("no usable forecast data for any part of this route")
     elif metrics.coverage_pct < min_coverage_pct:
         reasons.append(
-            "weather coverage {0:.1f}% is below the {1:.1f}% required "
-            "to judge this route".format(metrics.coverage_pct, min_coverage_pct)
+            f"weather coverage {metrics.coverage_pct:.1f}% is below the {min_coverage_pct:.1f}% required "
+            "to judge this route"
         )
 
     return tuple(reasons)

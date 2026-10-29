@@ -18,13 +18,13 @@ from apps.routing.providers.errors import ProviderError
 from apps.routing.providers.factory import provider_status
 from apps.routing.services.analysis import analyse_trip
 from apps.routing.services.corridor import forecast_corridor
-from apps.routing.services.places import suggest_places
 from apps.routing.services.errors import AnalysisError
+from apps.routing.services.places import suggest_places
 
 from .corridor import CorridorForecastRequestSerializer, serialise_corridor
 from .errors import error_response, exception_to_response
-from .throttling import ScopedThrottle
 from .serializers import RouteAnalysisRequestSerializer, serialise_analysis
+from .throttling import ScopedThrottle
 
 __all__ = ["CorridorForecastView", "HealthView", "PlacesView", "RouteAnalysisView"]
 

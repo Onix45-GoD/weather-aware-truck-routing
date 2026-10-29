@@ -37,3 +37,21 @@ exclude_lines = [
     # Protocol method bodies are declarations, not executable code.
     "^\\s*\\.\\.\\.$",
 ]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = ["migrations", ".venv"]
+
+[tool.ruff.lint]
+# Correctness and import hygiene; formatting is left to the editor.
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+  "E501",  # long lines: docstrings and URLs; the formatter is not enforced
+  "B008",  # function calls in defaults (DRF serializer fields)
+  "B904",  # raise ... from exc: enforced by review, many deliberate re-raises
+  "B905",  # zip(strict=): positional alignment is asserted explicitly where it matters
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]

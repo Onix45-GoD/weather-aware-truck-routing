@@ -1,0 +1,33 @@
+# Netlify builds the React frontend only; the Django API lives on Render
+# (see backend/render.yaml). The one environment variable the frontend
+# needs is VITE_API_BASE_URL -- the public API origin -- set in the Netlify
+# UI. It is not a secret; nothing secret ever goes into a VITE_* variable.
+
+[build]
+  base = "frontend"
+  command = "npm ci && npm run build"
+  # Relative to the repository root, not to `base`.
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# Single-page app: every path is served by index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=()"
+
+# Hashed build assets never change; cache them hard.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
