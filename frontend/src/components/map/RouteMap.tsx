@@ -26,6 +26,7 @@ import {
   type LevelByIndex,
 } from './geojson'
 import { MapControls } from './MapControls'
+import './mapWorker'
 import '@/styles/map.css'
 
 const SOURCES = {
