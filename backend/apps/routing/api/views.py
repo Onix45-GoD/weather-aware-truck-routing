@@ -9,41 +9,28 @@ from __future__ import annotations
 import logging
 import time
 
-from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.routing.providers.errors import ProviderConfigurationError, ProviderError
+from apps.routing.providers.errors import ProviderError
 from apps.routing.providers.factory import provider_status
 from apps.routing.services.analysis import analyse_trip
-from apps.routing.services.checkpoint_weather import fetch_checkpoint_weather
 from apps.routing.services.corridor import forecast_corridor
+from apps.routing.services.places import suggest_places
 from apps.routing.services.errors import AnalysisError
-from apps.routing.services.weather_tiles import (
-    WEATHER_TILE_LAYERS,
-    fetch_weather_tile,
-    tile_coordinates_are_valid,
-)
 
 from .corridor import CorridorForecastRequestSerializer, serialise_corridor
-from .checkpoint_weather import (
-    CheckpointWeatherQuerySerializer,
-    serialise_checkpoint_weather,
-)
 from .errors import error_response, exception_to_response
 from .serializers import RouteAnalysisRequestSerializer, serialise_analysis
 
-__all__ = [
-    "CheckpointWeatherView",
-    "CorridorForecastView",
-    "HealthView",
-    "RouteAnalysisView",
-    "WeatherTileView",
-]
+__all__ = ["CorridorForecastView", "HealthView", "PlacesView", "RouteAnalysisView"]
 
 logger = logging.getLogger(__name__)
+
+#: A place name is short; anything longer is not a search, it is a mistake.
+MAX_QUERY_LENGTH = 120
 
 
 class HealthView(APIView):
@@ -111,91 +98,6 @@ class RouteAnalysisView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
-class WeatherTileView(APIView):
-    """`GET /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png` -- a tile proxy.
-
-    The browser's map asks here for OpenWeatherMap raster tiles; the service
-    adds the key, fetches, caches and hands back the PNG. The key is the whole
-    reason the endpoint exists: it must never be embedded in a tile URL the
-    browser can read.
-
-    Success is a raw image response, so DRF's JSON renderer is bypassed on
-    that path. Failures use the same error envelope as every other endpoint.
-    """
-
-    def get(
-        self, _request: Request, layer: str, z: int, x: int, y: int
-    ) -> Response | HttpResponse:
-        if layer not in WEATHER_TILE_LAYERS:
-            return error_response(
-                code="UNKNOWN_TILE_LAYER",
-                message=(
-                    f"Unknown weather layer {layer!r}. Expected one of: "
-                    + ", ".join(sorted(WEATHER_TILE_LAYERS))
-                    + "."
-                ),
-                http_status=status.HTTP_404_NOT_FOUND,
-            )
-        if not tile_coordinates_are_valid(z, x, y):
-            return error_response(
-                code="INVALID_TILE",
-                message=f"Tile {z}/{x}/{y} is outside the supported range.",
-                http_status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            tile = fetch_weather_tile(layer, z, x, y)
-        except ProviderConfigurationError as exc:
-            # Not an outage: the feature is simply switched off on this
-            # deployment. 503 with a stable code lets the UI disable the
-            # control instead of showing broken tiles.
-            return error_response(
-                code="WEATHER_TILES_NOT_CONFIGURED",
-                message=str(exc),
-                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        except ProviderError as exc:
-            return exception_to_response(exc)
-
-        response = HttpResponse(tile.png, content_type="image/png")
-        # Let the browser reuse the tile for as long as the server would.
-        response["Cache-Control"] = f"public, max-age={tile.max_age_seconds}"
-        return response
-
-
-class CheckpointWeatherView(APIView):
-    """`GET /api/v1/checkpoint-weather?lat=&lon=&at=` -- weather at one point.
-
-    Descriptive context for a checkpoint the driver clicked: observed
-    conditions now, the 3-hourly forecast, and the slot nearest the ETA.
-    It is read-only decoration over the analysis; the risk levels were
-    computed from Open-Meteo before this is ever called and are not touched.
-    """
-
-    def get(self, request: Request) -> Response:
-        query = CheckpointWeatherQuerySerializer(data=request.query_params)
-        if not query.is_valid():
-            return error_response(
-                code="INVALID_REQUEST",
-                message="The checkpoint location could not be validated.",
-                http_status=status.HTTP_400_BAD_REQUEST,
-                details=query.errors,
-            )
-
-        try:
-            result = fetch_checkpoint_weather(query.coordinate(), query.eta())
-        except ProviderConfigurationError as exc:
-            return error_response(
-                code="CHECKPOINT_WEATHER_NOT_CONFIGURED",
-                message=str(exc),
-                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        except ProviderError as exc:
-            return exception_to_response(exc)
-
-        return Response(serialise_checkpoint_weather(result), status=status.HTTP_200_OK)
-
-
 class CorridorForecastView(APIView):
     """`POST /api/v1/corridor-forecast` -- the 0-48 h corridor frames.
 
@@ -247,3 +149,40 @@ class CorridorForecastView(APIView):
             "frames": len(result.frames),
         }
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class PlacesView(APIView):
+    """`GET /api/v1/places?q=` -- type-ahead suggestions for the trip form.
+
+    The same geocoding provider the analysis uses, so a suggestion the user
+    picks is a place the analysis will resolve. Too-short queries get an
+    empty list rather than an error: the form calls this on every keystroke.
+    """
+
+    def get(self, request: Request) -> Response:
+        query = str(request.query_params.get("q", "")).strip()
+        if len(query) > MAX_QUERY_LENGTH:
+            return error_response(
+                code="INVALID_REQUEST",
+                message=f"Queries are limited to {MAX_QUERY_LENGTH} characters.",
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            suggestions = suggest_places(query)
+        except ProviderError as exc:
+            return exception_to_response(exc)
+
+        return Response(
+            {
+                "query": query,
+                "suggestions": [
+                    {
+                        "label": item.label,
+                        "latitude": round(item.coordinate.latitude, 6),
+                        "longitude": round(item.coordinate.longitude, 6),
+                    }
+                    for item in suggestions
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )

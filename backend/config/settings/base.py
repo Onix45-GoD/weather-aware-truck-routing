@@ -105,22 +105,12 @@ WEATHER_PROVIDER = os.environ.get("WEATHER_PROVIDER", "open-meteo")
 # `apps.routing.providers.factory.provider_status`.
 TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "")
 
-# Enables the weather-map tile proxy (`/api/v1/weather-tiles/...`). Optional:
-# without it the endpoint answers 503 and the UI disables the overlay toggle.
-# The key is only ever sent server-to-server; the browser gets tile bytes.
-OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY", "")
-
 # Cache TTLs in seconds. Geocoding results are effectively static; forecasts
-# are refreshed on the half hour; routes change with traffic; weather tiles
-# are current conditions and go stale fastest.
+# are refreshed on the half hour; routes change with traffic.
 PROVIDER_CACHE_TTL = {
     "geocoding": int(os.environ.get("CACHE_TTL_GEOCODING", 60 * 60 * 24 * 30)),
     "routing": int(os.environ.get("CACHE_TTL_ROUTING", 60 * 10)),
     "weather": int(os.environ.get("CACHE_TTL_WEATHER", 60 * 30)),
-    # OpenWeatherMap refreshes its map tiles roughly every ten minutes.
-    "weather_tiles": int(os.environ.get("CACHE_TTL_WEATHER_TILES", 60 * 10)),
-    # Observed conditions for a clicked checkpoint; same cadence as tiles.
-    "conditions": int(os.environ.get("CACHE_TTL_CONDITIONS", 60 * 10)),
 }
 
 # In-process cache. Deliberately not Redis: nothing here needs to survive a

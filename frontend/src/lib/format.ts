@@ -99,14 +99,3 @@ export function measurement(
 export function pounds(value: number): string {
   return `${value.toLocaleString()} lb`
 }
-
-/** Compass point for a wind direction in degrees ("from"). */
-export function compassPoint(degrees: number | null): string | null {
-  if (degrees === null || !Number.isFinite(degrees)) return null
-  const points = [
-    'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
-    'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
-  ]
-  const index = Math.round((((degrees % 360) + 360) % 360) / 22.5) % 16
-  return points[index] ?? null
-}

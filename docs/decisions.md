@@ -748,9 +748,10 @@ recorded so nobody re-derives them.
 provider, adapter, unit normalisation, de-duplication, chunking and cache the
 analysis uses — classified by the same `assess_route` and summarised by the
 same `summarise_route`. The step is one hour because the data is hourly. No
-interpolation, no synthetic hours. OpenWeatherMap's 3-hourly forecast was
-not used: it is a different model at a coarser step and the risk engine was
-never calibrated against it.
+interpolation, no synthetic hours. OpenWeatherMap was briefly integrated for
+supplementary conditions and map rasters and then removed (D32): once the
+corridor frames carry every hour, a second provider with a different model
+and a coarser step added a key, two panels and a contradiction to explain.
 
 **Horizon.** `HourlyForecast.sample_at` (D19) decides whether an hour exists.
 An hour outside what the provider returned is `available: false` and every
@@ -774,6 +775,37 @@ horizon edges, provider failures, cargo-weight override via the domain as
 oracle), `tests/api/test_corridor_forecast.py` (contract, validation, gzip,
 de-duplication, a request built from a real analysis response) and the
 frontend `features/corridor` suites.
+
+---
+
+## D32. One weather provider — *Decision*
+
+OpenWeatherMap was added in Milestone 4b for a checkpoint conditions panel
+and precipitation/cloud/wind/temperature map rasters, and removed in
+Milestone 6. Reasons, in order of weight:
+
+1. **Redundancy.** The corridor forecast (D31) carries Open-Meteo's hourly
+   series for every checkpoint across 48 hours. The OWM panel showed the
+   same question answered by a different model at a 3-hour step, and the
+   two could disagree on screen with no way to say which mattered.
+2. **Simplicity.** One provider, one key fewer, one less panel, no °F/°C
+   toggle, no overlay toggle, no health probe to gate them.
+3. **Semantics.** The rasters showed *current* conditions under a
+   *forecast*-driven recommendation — a correspondence that does not exist,
+   which the legend had to keep disclaiming.
+
+What replaced it: clicking a checkpoint opens a map popup with the ETA
+conditions and that checkpoint's 48-hour risk strip, and the panel shows
+the full hourly table — all from the corridor frames already in memory.
+
+Also removed in the same pass, with the user's agreement: the
+`forecast_offset_hours` form slider (the API field stays; a second 0–48 h
+slider beside the corridor timeline invited exactly the confusion D28
+warns about), the SVG weather-profile chart (the table and the hour strip
+carry it), and the icon sidebar (three sections that were never separate
+views). The departure timezone now defaults to `America/Denver` — the
+default origin's zone — rather than the browser's: this is a US trucking
+tool, and a dispatcher abroad still plans in the truck's zone.
 
 ---
 

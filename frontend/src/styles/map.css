@@ -73,4 +73,23 @@
     border-top-color: #111c2d;
     border-bottom-color: #111c2d;
   }
+
+  /* The popup inherits the dark panel; MapLibre's default close glyph is
+   * near-black and would vanish on it. */
+  .maplibregl-popup-close-button {
+    color: #94a3b8;
+    font-size: 18px;
+    padding: 0 6px;
+    line-height: 1.2;
+  }
+
+  .maplibregl-popup-close-button:hover {
+    background: #1a2a40;
+    color: #f1f5f9;
+  }
+
+  .checkpoint-popup .maplibregl-popup-content {
+    padding: 12px 14px 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
 }

@@ -70,7 +70,14 @@ function supportedZones(): string[] {
   return FALLBACK_ZONES
 }
 
-/** The viewer's own timezone, used as the form default. */
+/**
+ * The form default. A US trucking tool starts in a US zone -- the one the
+ * default origin (Denver) is in -- rather than wherever the browser is; a
+ * dispatcher in another country still plans the trip in the truck's zone.
+ */
+export const DEFAULT_TIMEZONE = 'America/Denver'
+
+/** The viewer's own timezone, listed first so it is one click away. */
 export function browserTimezone(): string {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -88,7 +95,7 @@ export function timezoneOptions(): TimezoneOption[] {
   const seen = new Set<string>()
   const ordered: string[] = []
 
-  for (const zone of [current, ...zones.filter((z) => PRIORITY.has(z))]) {
+  for (const zone of [DEFAULT_TIMEZONE, current, ...zones.filter((z) => PRIORITY.has(z))]) {
     if (zone && !seen.has(zone)) {
       seen.add(zone)
       ordered.push(zone)

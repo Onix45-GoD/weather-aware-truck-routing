@@ -24,7 +24,7 @@ from typing import Final
 from apps.routing.domain.geo import haversine_miles
 from apps.routing.domain.models import Coordinate, RouteCandidate, WeatherSample
 
-from .base import GeocodeResult, HourlyForecast, RouteSet
+from .base import GeocodeResult, HourlyForecast, PlaceSuggestion, RouteSet
 from .errors import GeocodingNoResultsError
 
 __all__ = [
@@ -77,6 +77,22 @@ class FixtureGeocodingProvider:
             provider=PROVIDER_NAME,
             query=query,
         )
+
+    def suggest(self, query: str, *, limit: int = 6) -> tuple[PlaceSuggestion, ...]:
+        """Gazetteer entries whose name or label contains the query."""
+        key = query.strip().lower()
+        if len(key) < 2:
+            return ()
+        matches = [
+            PlaceSuggestion(
+                label=label,
+                coordinate=Coordinate(latitude=latitude, longitude=longitude),
+                provider=PROVIDER_NAME,
+            )
+            for name, (label, latitude, longitude) in FIXTURE_PLACES.items()
+            if key in name or key in label.lower()
+        ]
+        return tuple(matches[: max(1, limit)])
 
 
 class FixtureRoutingProvider:

@@ -15,18 +15,11 @@ import {
 import App from './App'
 
 const analyseRoute = vi.hoisted(() => vi.fn())
-const fetchHealth = vi.hoisted(() => vi.fn())
-const fetchCheckpointWeather = vi.hoisted(() => vi.fn())
+const fetchPlaceSuggestions = vi.hoisted(() => vi.fn())
 const fetchCorridorForecast = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return {
-    ...actual,
-    analyseRoute,
-    fetchHealth,
-    fetchCheckpointWeather,
-    fetchCorridorForecast,
-  }
+  return { ...actual, analyseRoute, fetchPlaceSuggestions, fetchCorridorForecast }
 })
 
 function renderApp() {
@@ -48,7 +41,7 @@ async function submit() {
 
 beforeEach(() => {
   analyseRoute.mockReset()
-  fetchHealth.mockResolvedValue({ status: 'ok', providers: {} })
+  fetchPlaceSuggestions.mockResolvedValue({ query: '', suggestions: [] })
   fetchCorridorForecast.mockReset()
   fetchCorridorForecast.mockReturnValue(new Promise(() => {}))
 })
@@ -402,21 +395,22 @@ describe('corridor forecast timeline', () => {
     expect(stamp).toHaveTextContent('+0 h')
   })
 
-  it('moving the slider updates the selected checkpoint’s forecast block', async () => {
+  it('moving the slider updates the selected checkpoint’s forecast block', { timeout: 15_000 }, async () => {
     const { user } = await analysedWithCorridor()
     const table = screen.getByRole('table', { name: /checkpoints/i })
     await user.click(within(table).getAllByRole('button')[1]!)
-    await screen.findByTestId('checkpoint-frame')
-    expect(screen.getByTestId('checkpoint-frame')).toHaveTextContent('At +0 h')
+    const hourly = await screen.findByRole('table', { name: /hourly forecast at this checkpoint/i })
+    expect(within(hourly).getAllByRole('button')[0]).toHaveAttribute('aria-current', 'time')
 
     const slider = screen.getByRole('slider', { name: /forecast hour/i })
     slider.focus()
-    for (let i = 0; i < 12; i += 1) await user.keyboard('{ArrowRight}')
+    // PageUp moves ten steps on an MUI slider; two arrows make twelve.
+    await user.keyboard('{PageUp}{ArrowRight}{ArrowRight}')
 
     expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+12 h')
-    const block = screen.getByTestId('checkpoint-frame')
-    expect(block).toHaveTextContent('At +12 h')
-    expect(within(block).getByText('Severe')).toBeVisible()
+    const rows = within(hourly).getAllByRole('button')
+    expect(rows[12]).toHaveAttribute('aria-current', 'time')
+    expect(within(rows[12]!).getByText('Severe')).toBeVisible()
     // Selection survived the hour change.
     expect(within(table).getAllByRole('button')[1]).toHaveClass('Mui-selected')
   })

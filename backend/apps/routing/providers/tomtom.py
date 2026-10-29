@@ -35,7 +35,7 @@ from urllib.parse import quote
 from apps.routing.domain.geo import decode_polyline, haversine_miles
 from apps.routing.domain.models import Coordinate, RouteCandidate
 
-from .base import GeocodeResult, RouteSet
+from .base import GeocodeResult, PlaceSuggestion, RouteSet
 from .errors import (
     GeocodingNoResultsError,
     InvalidProviderResponseError,
@@ -51,6 +51,10 @@ __all__ = [
 
 PROVIDER_NAME: Final = "tomtom"
 GEOCODE_URL: Final = "https://api.tomtom.com/search/2/geocode/{query}.json"
+#: Fuzzy search with `typeahead=true` is the documented type-ahead product.
+#: `idxSet=Geo,PAD` limits results to geographies (cities, counties,
+#: states) and point addresses -- what a trip origin or destination is.
+SUGGEST_URL: Final = "https://api.tomtom.com/search/2/search/{query}.json"
 ROUTING_URL: Final = "https://api.tomtom.com/routing/1/calculateRoute/{locations}/json"
 
 METRES_PER_MILE: Final = 1609.344
@@ -140,6 +144,47 @@ class TomTomGeocodingProvider(_TomTomBase):
             )
 
         return self._parse_result(results[0], cleaned)
+
+    def suggest(self, query: str, *, limit: int = 6) -> tuple[PlaceSuggestion, ...]:
+        """Type-ahead candidates. Empty for a blank or unmatched query."""
+        cleaned = query.strip()
+        if len(cleaned) < 2:
+            return ()
+        url = SUGGEST_URL.format(query=quote(cleaned, safe=""))
+        payload = self.client.get_json(
+            url,
+            {
+                "key": self._api_key,
+                "limit": max(1, min(limit, 10)),
+                "typeahead": "true",
+                "idxSet": "Geo,PAD",
+            },
+        )
+        if not isinstance(payload, Mapping):
+            raise InvalidProviderResponseError(
+                f"suggest: expected a JSON object, got {type(payload).__name__}.",
+                provider=PROVIDER_NAME,
+            )
+        results = payload.get("results")
+        if not isinstance(results, list):
+            raise InvalidProviderResponseError(
+                "suggest: response has no `results` array.", provider=PROVIDER_NAME
+            )
+        seen: set[str] = set()
+        suggestions: list[PlaceSuggestion] = []
+        for entry in results:
+            parsed = self._parse_result(entry, cleaned)
+            # TomTom returns the same town under several entity types;
+            # one label is enough for a picker.
+            if parsed.label in seen:
+                continue
+            seen.add(parsed.label)
+            suggestions.append(
+                PlaceSuggestion(
+                    label=parsed.label, coordinate=parsed.coordinate, provider=PROVIDER_NAME
+                )
+            )
+        return tuple(suggestions)
 
     @staticmethod
     def _parse_result(result: Any, query: str) -> GeocodeResult:

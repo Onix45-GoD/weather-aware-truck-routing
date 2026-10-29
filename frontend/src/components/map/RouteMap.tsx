@@ -3,25 +3,19 @@ import AlertTitle from '@mui/material/AlertTitle'
 import {
   Map as MapLibreMap,
   NavigationControl,
+  Popup,
   ScaleControl,
   type ExpressionSpecification,
   type GeoJSONSource,
   type MapLayerMouseEvent,
 } from 'maplibre-gl'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
-import type { AnalysedRoute } from '@/api/types'
+import type { AnalysedRoute, Checkpoint } from '@/api/types'
 import { riskColor, RISK_ORDER, riskStyle } from '@/theme/risk'
 
-import {
-  basemapStyleUrl,
-  DEFAULT_BASEMAP,
-  WEATHER_TILE_MAX_ZOOM,
-  weatherOverlayLabel,
-  weatherTileUrlTemplate,
-  type BasemapId,
-  type WeatherOverlayId,
-} from './basemaps'
+import { basemapStyleUrl, DEFAULT_BASEMAP, type BasemapId } from './basemaps'
 import {
   checkpointPoints,
   corridorPoints,
@@ -39,13 +33,11 @@ const SOURCES = {
   risk: 'risk-segments',
   checkpoints: 'checkpoints',
   endpoints: 'endpoints',
-  weather: 'weather-overlay',
   corridorBand: 'corridor-band',
   corridorHalo: 'corridor-halo',
 } as const
 
 const LAYERS = {
-  weather: 'weather-overlay',
   corridorBand: 'corridor-band',
   corridorHalo: 'corridor-halo',
   routeLine: 'route-line',
@@ -92,11 +84,9 @@ export interface RouteMapProps {
   selectedRouteId: string | null
   selectedCheckpointIndex: number | null
   onSelectRoute: (routeId: string) => void
-  onSelectCheckpoint: (index: number) => void
+  onSelectCheckpoint: (index: number | null) => void
   origin?: Place | null | undefined
   destination?: Place | null | undefined
-  /** Whether the server can serve OpenWeatherMap tiles. Defaults to no. */
-  weatherOverlaysAvailable?: boolean | undefined
   /**
    * Risk per checkpoint for the selected forecast hour. Null draws no
    * corridor band -- before an analysis, while frames load, or on error.
@@ -104,16 +94,20 @@ export interface RouteMapProps {
   corridorLevels?: LevelByIndex | null | undefined
   /** Caption for the frame being shown, e.g. `+12 h · Fri 6:00 PM MST`. */
   corridorLabel?: string | null | undefined
+  /**
+   * The selected checkpoint and what to show in its popup. The map anchors
+   * a popup at the checkpoint and renders `content` inside it.
+   */
+  popup?: { checkpoint: Checkpoint; content: ReactNode } | null | undefined
 }
 
 /**
  * Write every data source for the current props.
  *
- * Separated from the effect so one `try` covers all four writes. Any
- * MapLibre failure in here must surface *on the map* and nowhere else: an
- * uncaught throw inside an effect unmounts the whole application, which
- * turns a finished analysis into a blank page and loses the message in the
- * console.
+ * Separated from the effect so one `try` covers all writes. Any MapLibre
+ * failure in here must surface *on the map* and nowhere else: an uncaught
+ * throw inside an effect unmounts the whole application, which turns a
+ * finished analysis into a blank page and loses the message in the console.
  */
 function pushData(
   map: MapLibreMap,
@@ -194,14 +188,7 @@ function pushData(
  * every source and layer we added, so they are simply added again.
  */
 function addRouteLayers(map: MapLibreMap): void {
-  for (const id of [
-    SOURCES.routes,
-    SOURCES.risk,
-    SOURCES.checkpoints,
-    SOURCES.endpoints,
-    SOURCES.corridorBand,
-    SOURCES.corridorHalo,
-  ]) {
+  for (const id of Object.values(SOURCES)) {
     if (!map.getSource(id)) {
       map.addSource(id, { type: 'geojson', data: EMPTY })
     }
@@ -335,39 +322,6 @@ function addRouteLayers(map: MapLibreMap): void {
   }
 }
 
-/**
- * Replace the weather raster with `overlay`, or remove it when null.
- *
- * The raster goes *under* the route lines so the recommendation is never
- * obscured by a rain cell. Tiles come from our own server, which holds the
- * OpenWeatherMap key -- see `weatherTileUrlTemplate`.
- */
-function setWeatherOverlay(
-  map: MapLibreMap,
-  overlay: WeatherOverlayId | null,
-): void {
-  if (map.getLayer(LAYERS.weather)) map.removeLayer(LAYERS.weather)
-  if (map.getSource(SOURCES.weather)) map.removeSource(SOURCES.weather)
-  if (!overlay) return
-
-  map.addSource(SOURCES.weather, {
-    type: 'raster',
-    tiles: [weatherTileUrlTemplate(overlay)],
-    tileSize: 256,
-    maxzoom: WEATHER_TILE_MAX_ZOOM,
-    attribution: 'Weather © OpenWeatherMap',
-  })
-  map.addLayer(
-    {
-      id: LAYERS.weather,
-      type: 'raster',
-      source: SOURCES.weather,
-      paint: { 'raster-opacity': 0.7 },
-    },
-    map.getLayer(LAYERS.corridorBand) ? LAYERS.corridorBand : undefined,
-  )
-}
-
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -380,9 +334,9 @@ export function RouteMap({
   onSelectCheckpoint,
   origin,
   destination,
-  weatherOverlaysAvailable = false,
   corridorLevels = null,
   corridorLabel = null,
+  popup = null,
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -392,7 +346,6 @@ export function RouteMap({
   const [styleGeneration, setStyleGeneration] = useState(0)
   const [styleError, setStyleError] = useState<string | null>(null)
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP)
-  const [overlay, setOverlay] = useState<WeatherOverlayId | null>(null)
   const ready = styleGeneration > 0
 
   // Latest callbacks, so map handlers registered once never close over stale
@@ -410,6 +363,16 @@ export function RouteMap({
     () => routes.find((route) => route.route_id === selectedRouteId) ?? null,
     [routes, selectedRouteId],
   )
+
+  // One MapLibre popup, created on demand and moved rather than recreated.
+  // Its body is a plain DOM node that React renders into through a portal,
+  // so the popup content is ordinary React -- same chips, same formatting
+  // -- and still lives inside the map where the user clicked.
+  const popupRef = useRef<Popup | null>(null)
+  const [popupNode] = useState(() => document.createElement('div'))
+  // True while *we* are removing the popup, so its `close` event does not
+  // bounce back as a user dismissal.
+  const closingProgrammatically = useRef(false)
 
   // --- lifecycle: create exactly one map, destroy it on unmount -----------
   useEffect(() => {
@@ -462,6 +425,10 @@ export function RouteMap({
     return () => {
       map.off('style.load', onStyleLoad)
       map.off('error', onError)
+      closingProgrammatically.current = true
+      popupRef.current?.remove()
+      popupRef.current = null
+      closingProgrammatically.current = false
       map.remove()
       mapRef.current = null
       setStyleGeneration(0)
@@ -507,9 +474,11 @@ export function RouteMap({
       map.getCanvas().style.cursor = ''
     }
 
+    const clickable = [LAYERS.routeLine, LAYERS.checkpointDots, LAYERS.corridorHalo]
     map.on('click', LAYERS.routeLine, clickRoute)
     map.on('click', LAYERS.checkpointDots, clickCheckpoint)
-    for (const layer of [LAYERS.routeLine, LAYERS.checkpointDots]) {
+    map.on('click', LAYERS.corridorHalo, clickCheckpoint)
+    for (const layer of clickable) {
       map.on('mouseenter', layer, enter)
       map.on('mouseleave', layer, leave)
     }
@@ -517,26 +486,13 @@ export function RouteMap({
     return () => {
       map.off('click', LAYERS.routeLine, clickRoute)
       map.off('click', LAYERS.checkpointDots, clickCheckpoint)
-      for (const layer of [LAYERS.routeLine, LAYERS.checkpointDots]) {
+      map.off('click', LAYERS.corridorHalo, clickCheckpoint)
+      for (const layer of clickable) {
         map.off('mouseenter', layer, enter)
         map.off('mouseleave', layer, leave)
       }
     }
   }, [ready, styleGeneration])
-
-  // --- weather overlay -----------------------------------------------------
-  // Depends on the generation too: a basemap switch wipes the raster with
-  // everything else, so it is re-added after the route layers exist.
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !ready) return
-    try {
-      setWeatherOverlay(map, weatherOverlaysAvailable ? overlay : null)
-    } catch (error) {
-      // oxlint-disable-next-line react/set-state-in-effect
-      setStyleError(`Could not show the weather overlay: ${describe(error)}`)
-    }
-  }, [ready, styleGeneration, overlay, weatherOverlaysAvailable])
 
   // --- data updates -------------------------------------------------------
   useEffect(() => {
@@ -620,6 +576,43 @@ export function RouteMap({
     ])
   }, [ready, styleGeneration, selectedCheckpointIndex])
 
+  // --- popup ---------------------------------------------------------------
+  const popupLat = popup?.checkpoint.latitude ?? null
+  const popupLng = popup?.checkpoint.longitude ?? null
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+
+    if (popupLat === null || popupLng === null) {
+      if (popupRef.current) {
+        closingProgrammatically.current = true
+        popupRef.current.remove()
+        closingProgrammatically.current = false
+      }
+      return
+    }
+
+    if (!popupRef.current) {
+      const instance = new Popup({
+        closeButton: true,
+        closeOnClick: false,
+        maxWidth: '20rem',
+        offset: 14,
+        className: 'checkpoint-popup',
+      })
+      instance.setDOMContent(popupNode)
+      instance.on('close', () => {
+        if (!closingProgrammatically.current) {
+          handlers.current.onSelectCheckpoint(null)
+        }
+      })
+      popupRef.current = instance
+    }
+
+    popupRef.current.setLngLat([popupLng, popupLat]).addTo(map)
+  }, [ready, styleGeneration, popupLat, popupLng, popupNode])
+
   // Fit to the routes once they change, not on every render.
   const fittedKey = useRef<string>('')
   useEffect(() => {
@@ -669,30 +662,23 @@ export function RouteMap({
         </div>
       )}
 
-      <MapControls
-        basemap={basemap}
-        onBasemapChange={setBasemap}
-        overlay={overlay}
-        onOverlayChange={setOverlay}
-        overlaysAvailable={weatherOverlaysAvailable}
-      />
+      <MapControls basemap={basemap} onBasemapChange={setBasemap} />
 
       <MapLegend
         hasSelection={Boolean(selectedRoute)}
-        overlay={weatherOverlaysAvailable ? overlay : null}
         hasCorridor={Boolean(selectedRoute && corridorLevels)}
       />
+
+      {popup && createPortal(popup.content, popupNode)}
     </div>
   )
 }
 
 function MapLegend({
   hasSelection,
-  overlay,
   hasCorridor,
 }: {
   hasSelection: boolean
-  overlay: WeatherOverlayId | null
   hasCorridor: boolean
 }) {
   return (
@@ -728,16 +714,8 @@ function MapLegend({
         // whole route; the dots are each checkpoint at its own ETA.
         <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
           <strong>Wide band & halos:</strong> forecast at the selected hour.{' '}
-          <strong>Dots & dotted line:</strong> at each checkpoint's ETA.
-        </p>
-      )}
-      {overlay && (
-        // "Now" is load-bearing. The overlay is current conditions; the
-        // route colours are the forecast at each ETA. They are not the same
-        // thing, and the legend must not let them be read as one.
-        <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
-          Overlay: {weatherOverlayLabel(overlay)} <strong>now</strong>, not at
-          ETA. Route colours are the forecast.
+          <strong>Dots & dotted line:</strong> at each checkpoint's ETA. Click a
+          checkpoint for its weather.
         </p>
       )}
     </div>

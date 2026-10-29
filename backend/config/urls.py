@@ -5,12 +5,7 @@
     POST /api/v1/corridor-forecast  the selected route's checkpoints at every
                                  hour from +0 to +48 after the analysis
                                  reference time, classified (display only)
-    GET  /api/v1/checkpoint-weather?lat=&lon=&at=
-                                 observed conditions + 3-hourly forecast at
-                                 one checkpoint, with the ETA slot picked out
-    GET  /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png
-                                 OpenWeatherMap raster tiles, proxied so the
-                                 key stays on the server
+    GET  /api/v1/places?q=       place-name suggestions for the trip form
 
 Note on the path: Milestone 1's plan sketched this endpoint as
 `/api/v1/analyze`. It ships as `/api/v1/route-analysis`, which says what it

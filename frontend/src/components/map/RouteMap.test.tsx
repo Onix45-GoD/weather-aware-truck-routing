@@ -16,6 +16,7 @@ import { Providers } from '@/app/Providers'
 import { makeRoutes } from '@/test/fixtures'
 
 const mapInstances = vi.hoisted(() => [] as Array<Record<string, unknown>>)
+const popupInstances = vi.hoisted(() => [] as Array<Record<string, unknown>>)
 
 vi.mock('maplibre-gl', () => {
   class FakeMap {
@@ -102,10 +103,41 @@ vi.mock('maplibre-gl', () => {
     }
   }
 
+  class FakePopup {
+    lngLat: unknown = null
+    node: HTMLElement | null = null
+    added = false
+    handlers = new Map<string, Set<() => void>>()
+    setLngLat(lngLat: unknown) {
+      this.lngLat = lngLat
+      return this
+    }
+    setDOMContent(node: HTMLElement) {
+      this.node = node
+      return this
+    }
+    addTo() {
+      this.added = true
+      if (!popupInstances.includes(this as unknown as Record<string, unknown>)) {
+        popupInstances.push(this as unknown as Record<string, unknown>)
+      }
+      return this
+    }
+    on(event: string, handler: () => void) {
+      if (!this.handlers.has(event)) this.handlers.set(event, new Set())
+      this.handlers.get(event)!.add(handler)
+    }
+    remove() {
+      this.added = false
+      this.handlers.get('close')?.forEach((h) => h())
+    }
+  }
+
   return {
     Map: FakeMap,
     NavigationControl: class {},
     ScaleControl: class {},
+    Popup: FakePopup,
   }
 })
 
@@ -132,6 +164,7 @@ function renderMap(props: Partial<Parameters<typeof RouteMap>[0]> = {}) {
 
 beforeEach(() => {
   mapInstances.length = 0
+  popupInstances.length = 0
 })
 
 describe('map lifecycle', () => {
@@ -291,54 +324,6 @@ describe('basemap switching', () => {
   })
 })
 
-describe('weather overlay', () => {
-  it('is disabled when the server has no OpenWeatherMap key', async () => {
-    await mountedMap({ weatherOverlaysAvailable: false })
-    expect(screen.getByRole('button', { name: 'Precipitation' })).toBeDisabled()
-  })
-
-  it('adds a raster layer under the routes, served by our own API', async () => {
-    const map = await mountedMap({ weatherOverlaysAvailable: true })
-    const user = userEvent.setup()
-
-    await user.click(screen.getByRole('button', { name: 'Precipitation' }))
-
-    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
-    const spec = map.sourceSpecs.get('weather-overlay')!
-    expect(spec['type']).toBe('raster')
-    const [template] = spec['tiles'] as string[]
-    expect(template).toContain('/api/v1/weather-tiles/precipitation_new/')
-    expect(template).not.toMatch(/openweathermap|appid/)
-    expect(screen.getByText(/now/)).toBeVisible()
-  })
-
-  it('removes the overlay when deselected', async () => {
-    const map = await mountedMap({ weatherOverlaysAvailable: true })
-    const user = userEvent.setup()
-    const rain = screen.getByRole('button', { name: 'Precipitation' })
-
-    await user.click(rain)
-    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
-    await user.click(rain)
-
-    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(false))
-    expect(map.sources.has('weather-overlay')).toBe(false)
-  })
-
-  it('survives a basemap switch', async () => {
-    const map = await mountedMap({ weatherOverlaysAvailable: true })
-    const user = userEvent.setup()
-
-    await user.click(screen.getByRole('button', { name: 'Clouds' }))
-    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
-    await user.click(screen.getByRole('button', { name: 'Dark' }))
-
-    await waitFor(() => expect(map.styleUrl).toMatch(/dark-matter/))
-    await waitFor(() => expect(map.layers.has('weather-overlay')).toBe(true))
-    expect(map.layers.has('route-line')).toBe(true)
-  })
-})
-
 describe('corridor forecast layers', () => {
   const levels = new Map<number, RiskLevel>([
     [0, 'LOW'],
@@ -385,5 +370,52 @@ describe('corridor forecast layers', () => {
     )
     expect(mapInstances).toHaveLength(1)
     expect(screen.getByTestId('corridor-badge')).toHaveTextContent('+3 h')
+  })
+})
+
+describe('checkpoint popup', () => {
+  const point = makeRoutes(1)[0]!.checkpoints[1]!
+
+  it('anchors a popup at the checkpoint and renders the content inside it', async () => {
+    await mountedMap({
+      popup: { checkpoint: point, content: <div data-testid="popup-body">Weather here</div> },
+    })
+    await waitFor(() => expect(popupInstances).toHaveLength(1))
+    const popup = popupInstances[0] as unknown as { lngLat: [number, number]; node: HTMLElement; added: boolean }
+    expect(popup.lngLat).toEqual([point.longitude, point.latitude])
+    expect(popup.added).toBe(true)
+    expect(popup.node.querySelector('[data-testid="popup-body"]')?.textContent).toBe('Weather here')
+  })
+
+  it('clears the selection when the user closes the popup', async () => {
+    const onSelectCheckpoint = vi.fn()
+    await mountedMap({ onSelectCheckpoint, popup: { checkpoint: point, content: <span>x</span> } })
+    await waitFor(() => expect(popupInstances).toHaveLength(1))
+    const popup = popupInstances[0] as unknown as { handlers: Map<string, Set<() => void>> }
+    popup.handlers.get('close')!.forEach((h) => h())
+    expect(onSelectCheckpoint).toHaveBeenCalledWith(null)
+  })
+
+  it('removes the popup without bouncing a dismissal when the selection is cleared', async () => {
+    const onSelectCheckpoint = vi.fn()
+    const { rerender } = renderMap({ onSelectCheckpoint, popup: { checkpoint: point, content: <span>x</span> } })
+    await waitFor(() => expect(popupInstances).toHaveLength(1))
+    rerender(
+      <Providers>
+        <div style={{ height: 400 }}>
+          <RouteMap
+            routes={makeRoutes(2)}
+            selectedRouteId="tomtom-0"
+            selectedCheckpointIndex={null}
+            onSelectRoute={vi.fn()}
+            onSelectCheckpoint={onSelectCheckpoint}
+            popup={null}
+          />
+        </div>
+      </Providers>,
+    )
+    const popup = popupInstances[0] as unknown as { added: boolean }
+    expect(popup.added).toBe(false)
+    expect(onSelectCheckpoint).not.toHaveBeenCalled()
   })
 })

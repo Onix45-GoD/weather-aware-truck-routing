@@ -3,17 +3,14 @@
  *
  * Only ever talks to our own backend. No provider credential is referenced
  * here, and none should be: `VITE_*` variables are compiled into the bundle
- * and are therefore public. TomTom, Open-Meteo and OpenWeatherMap are reached
- * by the server.
+ * and are therefore public. TomTom and Open-Meteo are reached by the server.
  */
 
 import type {
   ApiErrorBody,
-  CheckpointWeatherQuery,
-  CheckpointWeatherResponse,
   CorridorForecastRequest,
   CorridorForecastResponse,
-  HealthResponse,
+  PlaceSuggestionsResponse,
   RouteAnalysisRequest,
   RouteAnalysisResponse,
 } from './types'
@@ -179,33 +176,6 @@ export function analyseRoute(
   )
 }
 
-export function fetchHealth(options: RequestOptions = {}): Promise<HealthResponse> {
-  return request<HealthResponse>('/api/v1/health', { method: 'GET' }, {
-    timeoutMs: 5_000,
-    ...options,
-  })
-}
-
-/**
- * Detailed weather at one checkpoint. Our server holds the OpenWeatherMap
- * key; this only ever sends a coordinate and an ETA.
- */
-export function fetchCheckpointWeather(
-  query: CheckpointWeatherQuery,
-  options: RequestOptions = {},
-): Promise<CheckpointWeatherResponse> {
-  const params = new URLSearchParams({
-    lat: query.lat.toFixed(5),
-    lon: query.lon.toFixed(5),
-  })
-  if (query.at) params.set('at', query.at)
-  return request<CheckpointWeatherResponse>(
-    `/api/v1/checkpoint-weather?${params.toString()}`,
-    { method: 'GET' },
-    { timeoutMs: 15_000, ...options },
-  )
-}
-
 /**
  * The 0-48 h corridor frames for one route. Display-only on the server too:
  * it classifies the same forecast at other hours and cannot change the
@@ -219,5 +189,21 @@ export function fetchCorridorForecast(
     '/api/v1/corridor-forecast',
     { method: 'POST', body: JSON.stringify(payload) },
     options,
+  )
+}
+
+/**
+ * Type-ahead place suggestions for the trip form, from the same geocoder
+ * the analysis uses.
+ */
+export function fetchPlaceSuggestions(
+  query: string,
+  options: RequestOptions = {},
+): Promise<PlaceSuggestionsResponse> {
+  const params = new URLSearchParams({ q: query })
+  return request<PlaceSuggestionsResponse>(
+    `/api/v1/places?${params.toString()}`,
+    { method: 'GET' },
+    { timeoutMs: 8_000, ...options },
   )
 }

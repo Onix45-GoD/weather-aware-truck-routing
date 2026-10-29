@@ -18,6 +18,7 @@ __all__ = [
     "FORECAST_MATCH_TOLERANCE",
     "GeocodeResult",
     "GeocodingProvider",
+    "PlaceSuggestion",
     "HourlyForecast",
     "RouteSet",
     "RoutingProvider",
@@ -39,6 +40,15 @@ class GeocodeResult:
     label: str
     provider: str
     confidence: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlaceSuggestion:
+    """One candidate place for a partially typed query."""
+
+    label: str
+    coordinate: Coordinate
+    provider: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +159,13 @@ class GeocodingProvider(Protocol):
 
         Raises :class:`~apps.routing.providers.errors.GeocodingNoResultsError`
         when nothing matches -- never returns a guessed coordinate.
+        """
+        ...
+
+    def suggest(self, query: str, *, limit: int = 6) -> tuple[PlaceSuggestion, ...]:
+        """Candidate places for a partial ``query``, best first.
+
+        For type-ahead. An empty tuple is a valid answer; nothing is guessed.
         """
         ...
 

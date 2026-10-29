@@ -19,18 +19,11 @@ import App from './App'
 import realResponse from './test/real-response.json'
 
 const analyseRoute = vi.hoisted(() => vi.fn())
-const fetchHealth = vi.hoisted(() => vi.fn())
-const fetchCheckpointWeather = vi.hoisted(() => vi.fn())
+const fetchPlaceSuggestions = vi.hoisted(() => vi.fn())
 const fetchCorridorForecast = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return {
-    ...actual,
-    analyseRoute,
-    fetchHealth,
-    fetchCheckpointWeather,
-    fetchCorridorForecast,
-  }
+  return { ...actual, analyseRoute, fetchPlaceSuggestions, fetchCorridorForecast }
 })
 
 const real = realResponse as unknown as RouteAnalysisResponse
@@ -43,7 +36,7 @@ beforeEach(() => {
     consoleErrors.push(args)
   })
   analyseRoute.mockResolvedValue(real)
-  fetchHealth.mockResolvedValue({ status: 'ok', providers: {} })
+  fetchPlaceSuggestions.mockResolvedValue({ query: '', suggestions: [] })
   fetchCorridorForecast.mockReturnValue(new Promise(() => {}))
 })
 
@@ -78,7 +71,7 @@ describe('dashboard against a real API response', () => {
     // Summary, checkpoint table, details, weather profile
     expect(screen.getByText('Total distance')).toBeVisible()
     expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
-    expect(screen.getByText(/weather along route/i)).toBeVisible()
+    expect(screen.getByText(/corridor forecast/i)).toBeVisible()
 
     // Map still mounted after data arrives
     expect(screen.getByTestId('map-container')).toHaveAttribute(

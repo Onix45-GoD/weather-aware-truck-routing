@@ -9,27 +9,24 @@ import { useCallback, useMemo, useState } from 'react'
 import type { RiskLevel, RouteAnalysisRequest } from '@/api/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Header } from '@/components/layout/Header'
-import { Sidebar, type SectionId } from '@/components/layout/Sidebar'
+import { CheckpointPopup } from '@/components/map/CheckpointPopup'
 import { LazyRouteMap } from '@/components/map/LazyRouteMap'
 import { RouteCard } from '@/components/route/RouteCard'
 import { RouteSummary } from '@/components/route/RouteSummary'
 import { CheckpointDetails } from '@/components/weather/CheckpointDetails'
 import { CheckpointTable } from '@/components/weather/CheckpointTable'
-import { WeatherProfile } from '@/components/weather/WeatherProfile'
 import { ForecastTimeline } from '@/features/corridor/ForecastTimeline'
 import { frameLabel } from '@/features/corridor/frameLabel'
+import { checkpointSeries } from '@/features/corridor/series'
 import { useCorridorForecast } from '@/features/corridor/useCorridorForecast'
 import { useForecastPlayback } from '@/features/corridor/useForecastPlayback'
-import { useHealth } from '@/features/health/useHealth'
 import { TripForm } from '@/features/route-analysis/TripForm'
 import { useRouteAnalysis } from '@/features/route-analysis/useRouteAnalysis'
 
 export default function App() {
   const { data, error, fieldErrors, isLoading, status, analyse } =
     useRouteAnalysis()
-  const { weatherOverlaysAvailable, weatherDetailAvailable } = useHealth()
 
-  const [section, setSection] = useState<SectionId>('plan')
   const [tripOpen, setTripOpen] = useState(false)
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<number | null>(
@@ -95,17 +92,11 @@ export default function App() {
     ? `+${frame.hour} h · ${frameLabel(frame.at, timeZone)}`
     : null
 
-  const checkpointFrame = useMemo(() => {
-    if (!frame || selectedCheckpoint === null) return null
-    return {
-      hour: frame.hour,
-      at: frame.at,
-      available: frame.available,
-      checkpoint:
-        frame.checkpoints.find((point) => point.index === selectedCheckpoint) ??
-        null,
-    }
-  }, [frame, selectedCheckpoint])
+  // The selected checkpoint across all 49 hours -- for the popup and panel.
+  const series = useMemo(
+    () => checkpointSeries(frames, selectedCheckpoint),
+    [frames, selectedCheckpoint],
+  )
 
   const handleSubmit = useCallback(
     (payload: RouteAnalysisRequest) => {
@@ -131,10 +122,23 @@ export default function App() {
   // Warnings that are not tied to one route — coverage, DST, shortfalls.
   const globalWarnings = data?.warnings.filter((w) => !w.route_id) ?? []
 
+  const popup = checkpoint
+    ? {
+        checkpoint,
+        content: (
+          <CheckpointPopup
+            checkpoint={checkpoint}
+            timeZone={timeZone}
+            series={series}
+            hour={forecastHour}
+            onHourChange={setForecastHour}
+          />
+        ),
+      }
+    : null
+
   return (
     <div className="flex h-full min-h-0 w-full">
-      <Sidebar active={section} onSelect={setSection} />
-
       <div className="flex min-w-0 flex-1 flex-col">
         <Header analysis={data} onOpenTripForm={() => setTripOpen(true)} />
         {isLoading && <LinearProgress />}
@@ -188,7 +192,7 @@ export default function App() {
               {/* The boundary is what stops a MapLibre crash from unmounting
                   the whole dashboard. If the map dies, it dies alone: the
                   route cards, checkpoints and weather stay on screen. */}
-              <div className="h-[clamp(320px,48vh,560px)] min-w-0">
+              <div className="h-[clamp(360px,52vh,600px)] min-w-0">
                 <ErrorBoundary label="The map">
                   <LazyRouteMap
                     routes={data?.routes ?? []}
@@ -198,9 +202,9 @@ export default function App() {
                     onSelectCheckpoint={setSelectedCheckpoint}
                     origin={data?.origin ?? null}
                     destination={data?.destination ?? null}
-                    weatherOverlaysAvailable={weatherOverlaysAvailable}
                     corridorLevels={corridorLevels}
                     corridorLabel={corridorLabel}
+                    popup={popup}
                   />
                 </ErrorBoundary>
               </div>
@@ -250,28 +254,20 @@ export default function App() {
 
           {data && selectedRoute && (
             <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="flex min-w-0 flex-col gap-3">
-                <CheckpointTable
-                  route={selectedRoute}
-                  selectedIndex={selectedCheckpoint}
-                  onSelect={setSelectedCheckpoint}
-                  timeZone={timeZone}
-                />
-              </div>
-              <div className="flex min-w-0 flex-col gap-3">
-                <CheckpointDetails
-                  route={selectedRoute}
-                  checkpoint={checkpoint}
-                  timeZone={timeZone}
-                  weatherDetailAvailable={weatherDetailAvailable}
-                  frame={checkpointFrame}
-                />
-                <WeatherProfile
-                  route={selectedRoute}
-                  selectedIndex={selectedCheckpoint}
-                  onSelect={setSelectedCheckpoint}
-                />
-              </div>
+              <CheckpointTable
+                route={selectedRoute}
+                selectedIndex={selectedCheckpoint}
+                onSelect={setSelectedCheckpoint}
+                timeZone={timeZone}
+              />
+              <CheckpointDetails
+                route={selectedRoute}
+                checkpoint={checkpoint}
+                timeZone={timeZone}
+                series={series}
+                hour={forecastHour}
+                onHourChange={setForecastHour}
+              />
             </div>
           )}
         </main>

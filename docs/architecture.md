@@ -57,8 +57,7 @@ all exist today. The frontend features arrive in Milestones 4–6.
 |---|---|
 | `services/analysis.py` | The whole workflow: geocode → route → checkpoints → weather → risk → rank. Carries values; decides nothing. |
 | `services/corridor.py` | The 0–48 h view: one `hourly()` call for the selected route's checkpoints, then `assess_route` + `summarise_route` per hour. Display only; cannot change a result. |
-| `services/checkpoint_weather.py` | Supplementary OpenWeatherMap conditions for one clicked checkpoint. Never an input to the domain. |
-| `services/weather_tiles.py` | OpenWeatherMap raster tiles, proxied so the key stays server-side. |
+| `services/places.py` | Type-ahead place suggestions from the configured geocoder. |
 | `services/errors.py` | `AnalysisError`, `AmbiguousLocationError` — a valid request that cannot yield a trustworthy answer. |
 | `api/serializers.py` | Request validation (including timezone resolution) and response shaping. |
 | `api/errors.py` | Typed error → HTTP status, one envelope for every failure. |

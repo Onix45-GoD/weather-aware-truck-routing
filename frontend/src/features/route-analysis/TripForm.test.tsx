@@ -27,9 +27,14 @@ describe('TripForm accessibility', () => {
     expect(screen.getByLabelText(/cargo weight/i)).toBeInTheDocument()
   })
 
-  it('gives the forecast offset slider an accessible name', () => {
+  it('has no departure-delay slider; the corridor timeline is the only 0–48 h control', () => {
     renderForm()
-    expect(screen.getByRole('slider')).toHaveAccessibleName(/delay departure/i)
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+  })
+
+  it('defaults the departure timezone to a US zone, not the browser zone', () => {
+    renderForm()
+    expect(screen.getByRole('combobox', { name: /departure timezone/i })).toHaveTextContent('America/Denver')
   })
 
   it('can be submitted from the keyboard', async () => {
@@ -123,7 +128,7 @@ describe('TripForm request serialisation', () => {
     const payload = onSubmit.mock.calls[0]?.[0]
     expect(typeof payload.load_weight_lb).toBe('number')
     expect(typeof payload.checkpoint_interval_miles).toBe('number')
-    expect(typeof payload.forecast_offset_hours).toBe('number')
+    expect(payload).not.toHaveProperty('forecast_offset_hours')
   })
 
   it('trims surrounding whitespace from locations', async () => {
@@ -138,13 +143,6 @@ describe('TripForm request serialisation', () => {
     expect(onSubmit.mock.calls[0]?.[0].origin).toBe('Denver, CO')
   })
 
-  it('defaults the forecast offset to zero', async () => {
-    const user = userEvent.setup()
-    const { onSubmit } = renderForm()
-
-    await user.click(submitButton())
-    expect(onSubmit.mock.calls[0]?.[0].forecast_offset_hours).toBe(0)
-  })
 })
 
 describe('TripForm loading state', () => {
@@ -159,30 +157,5 @@ describe('TripForm loading state', () => {
 
     await user.click(screen.getByRole('button', { name: /analysing/i }))
     expect(onSubmit).not.toHaveBeenCalled()
-  })
-})
-
-describe('TripForm forecast offset', () => {
-  it('explains that a non-zero offset re-runs the analysis', async () => {
-    const user = userEvent.setup()
-    renderForm()
-
-    const slider = screen.getByRole('slider')
-    slider.focus()
-    await user.keyboard('{ArrowRight>6/}')
-
-    expect(await screen.findByText(/analysing a departure/i)).toBeVisible()
-  })
-
-  it('includes the offset in the payload', async () => {
-    const user = userEvent.setup()
-    const { onSubmit } = renderForm()
-
-    const slider = screen.getByRole('slider')
-    slider.focus()
-    await user.keyboard('{ArrowRight>3/}')
-    await user.click(submitButton())
-
-    expect(onSubmit.mock.calls[0]?.[0].forecast_offset_hours).toBe(3)
   })
 })

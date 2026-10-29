@@ -1,17 +1,13 @@
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import SearchIcon from '@mui/icons-material/Search'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
-import Slider from '@mui/material/Slider'
 import TextField from '@mui/material/TextField'
-import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
-import { useId, useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 
 import { CHECKPOINT_INTERVALS, type RouteAnalysisRequest } from '@/api/types'
-import { browserTimezone, timezoneOptions } from '@/lib/timezones'
+import { PlaceField } from '@/features/places/PlaceField'
+import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones'
 
 export interface TripFormValues {
   origin: string
@@ -21,7 +17,6 @@ export interface TripFormValues {
   departureTimezone: string
   loadWeightLb: string
   checkpointIntervalMiles: number
-  forecastOffsetHours: number
 }
 
 export interface TripFormProps {
@@ -60,16 +55,16 @@ export function TripForm({
     origin: 'Denver, CO',
     destination: 'Chicago, IL',
     departureLocal: defaultDeparture(),
-    departureTimezone: browserTimezone(),
+    // A US trucking tool defaults to a US zone -- the one the default
+    // origin is in -- not to wherever the browser happens to be.
+    departureTimezone: DEFAULT_TIMEZONE,
     loadWeightLb: '40000',
     checkpointIntervalMiles: 25,
-    forecastOffsetHours: 0,
     ...initialValues,
   }))
   const [touched, setTouched] = useState(false)
 
   const zones = useMemo(() => timezoneOptions(), [])
-  const offsetLabelId = useId()
 
   const localErrors = useMemo(() => {
     const weight = Number(values.loadWeightLb)
@@ -122,34 +117,23 @@ export function TripForm({
       load_weight_lb: Number(values.loadWeightLb),
       checkpoint_interval_miles:
         values.checkpointIntervalMiles as RouteAnalysisRequest['checkpoint_interval_miles'],
-      forecast_offset_hours: values.forecastOffsetHours,
     })
   }
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-      <TextField
+      <PlaceField
         label="Origin"
         value={values.origin}
-        onChange={(event) => update('origin', event.target.value)}
-        error={Boolean(errorFor('origin'))}
-        helperText={errorFor('origin')}
-        fullWidth
-        size="small"
-        autoComplete="off"
-        slotProps={{ htmlInput: { 'aria-label': 'Origin' } }}
+        onChange={(value) => update('origin', value)}
+        error={errorFor('origin') || undefined}
       />
 
-      <TextField
+      <PlaceField
         label="Destination"
         value={values.destination}
-        onChange={(event) => update('destination', event.target.value)}
-        error={Boolean(errorFor('destination'))}
-        helperText={errorFor('destination')}
-        fullWidth
-        size="small"
-        autoComplete="off"
-        slotProps={{ htmlInput: { 'aria-label': 'Destination' } }}
+        onChange={(value) => update('destination', value)}
+        error={errorFor('destination') || undefined}
       />
 
       <TextField
@@ -219,64 +203,6 @@ export function TripForm({
           </MenuItem>
         ))}
       </TextField>
-
-      <div className="flex flex-col gap-1">
-        {/* The tooltip hangs off its own icon rather than wrapping the
-            label. Wrapping the label would make the tooltip text become the
-            slider's accessible name, replacing "Delay departure" with a
-            paragraph — and a tooltip on plain text is undiscoverable anyway. */}
-        <div className="flex items-center gap-1">
-          <Typography
-            id={offsetLabelId}
-            variant="body2"
-            className="text-[0.8125rem]"
-            color="text.secondary"
-          >
-            Delay departure (hours)
-          </Typography>
-          <Tooltip
-            title={
-              'Re-runs the whole analysis for a later departure — routing, ' +
-              'ETAs, weather and the recommendation can all change. This is ' +
-              'not a display-only forecast scrubber.'
-            }
-            placement="top"
-          >
-            <InfoOutlinedIcon
-              aria-label="What does delaying departure do?"
-              tabIndex={0}
-              sx={{ fontSize: 15, color: 'text.secondary', cursor: 'help' }}
-            />
-          </Tooltip>
-        </div>
-        <div className="px-1">
-          <Slider
-            value={values.forecastOffsetHours}
-            onChange={(_event, value) =>
-              update('forecastOffsetHours', value as number)
-            }
-            min={0}
-            max={48}
-            step={1}
-            marks={[
-              { value: 0, label: '0' },
-              { value: 12, label: '12' },
-              { value: 24, label: '24' },
-              { value: 36, label: '36' },
-              { value: 48, label: '48' },
-            ]}
-            valueLabelDisplay="auto"
-            aria-labelledby={offsetLabelId}
-            aria-valuetext={`${values.forecastOffsetHours} hours later`}
-          />
-        </div>
-        {values.forecastOffsetHours > 0 && (
-          <Alert severity="info" variant="outlined" className="mt-1">
-            Analysing a departure {values.forecastOffsetHours} h later than the
-            time above.
-          </Alert>
-        )}
-      </div>
 
       <Button
         type="submit"

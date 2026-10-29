@@ -127,10 +127,6 @@ For real TomTom routing, put your key in `backend/.env` (gitignored):
 TOMTOM_API_KEY=your-key-here
 ROUTING_PROVIDER=tomtom
 GEOCODING_PROVIDER=tomtom
-
-# Optional: enables the precipitation / clouds / wind / temperature
-# overlays on the map. Route analysis never uses this key.
-OPENWEATHERMAP_API_KEY=your-key-here
 ```
 
 ### Frontend environment variables
@@ -142,21 +138,29 @@ OPENWEATHERMAP_API_KEY=your-key-here
 
 ⚠️ **Never put a provider credential in a `VITE_*` variable.** They are
 compiled into the JavaScript bundle and are readable by anyone who opens the
-site. TomTom, Open-Meteo and OpenWeatherMap are called by the Django server,
-never by the browser — tests assert that neither the analysis request nor
-the weather-tile URLs carry a credential.
+site. TomTom and Open-Meteo are called by the Django server, never by the
+browser — a test asserts the frontend request carries no credential.
 
 ---
 
 ## API
 
-Five endpoints. No authentication, no accounts, no database — the service
+Four endpoints. No authentication, no accounts, no database — the service
 is stateless, and two identical requests produce identical output.
 
 ### `GET /api/v1/health`
 
 Liveness, plus which providers are configured. Reports whether a credential is
 *present*, never any part of its value.
+
+### `GET /api/v1/places?q=`
+
+Type-ahead suggestions for the origin and destination fields, from the
+same geocoder the analysis uses (TomTom fuzzy search with `typeahead=true`,
+geographies and point addresses; the offline fixture gazetteer otherwise).
+Under two characters returns an empty list, not an error; at most six
+results, in the provider's order; cached with the geocoding TTL. Free text
+still submits — suggestions are an accelerator, never a gate.
 
 ### `POST /api/v1/corridor-forecast`
 
@@ -200,36 +204,6 @@ second analysis ([D28](docs/decisions.md), [D31](docs/decisions.md)).
 Responses are gzipped (`GZipMiddleware`): ~49 × N checkpoints of repetitive
 JSON compresses to tens of KB.
 
-### `GET /api/v1/checkpoint-weather?lat=&lon=&at=`
-
-Detailed weather at one checkpoint, for the panel that opens when a driver
-clicks one: observed conditions **now** (temperature, feels-like, sky,
-wind, humidity, pressure, visibility, clouds, last-hour rain/snow) and the
-OpenWeatherMap 5-day / 3-hourly forecast, with the slot nearest the ETA
-picked out as `at_eta` plus the signed `eta_gap_minutes` between them. An
-ETA more than 90 minutes from any slot gets `at_eta: null` rather than a
-stale slot passed off as the arrival forecast; `eta_beyond_horizon` says
-whether that is because the trip is further out than five days. `at` must
-carry a UTC offset — the analysis emits every ETA with one. Cached per
-~1 km cell (10 min observed, 30 min forecast). **Never an input to the
-risk engine**: the levels come from Open-Meteo through the assessment's
-thresholds and are computed before this is called. Without
-`OPENWEATHERMAP_API_KEY` it answers `503 CHECKPOINT_WEATHER_NOT_CONFIGURED`
-and the panel explains instead.
-
-### `GET /api/v1/weather-tiles/<layer>/<z>/<x>/<y>.png`
-
-Proxies one OpenWeatherMap raster tile — `precipitation_new`, `clouds_new`,
-`wind_new` or `temp_new`, zoom 0–12. The server appends the key, fetches,
-caches for ten minutes and returns the PNG with a matching `Cache-Control`.
-The key is the whole reason the endpoint exists: OpenWeatherMap puts it in
-the tile URL, and a tile URL the browser can read is a key the browser can
-read. Without `OPENWEATHERMAP_API_KEY` it answers `503
-WEATHER_TILES_NOT_CONFIGURED` and the UI disables the overlay toggle;
-an unknown layer is `404 UNKNOWN_TILE_LAYER`, an out-of-range tile `400
-INVALID_TILE`. These tiles are **current conditions**, not the forecast at
-a checkpoint's ETA — see *Map* below.
-
 ### `POST /api/v1/route-analysis`
 
 ```jsonc
@@ -259,7 +233,9 @@ the zone name and let the server resolve it. Ambiguous and nonexistent local
 times (the two DST edges) are resolved to a documented choice and flagged in
 `warnings`.
 
-**On `forecast_offset_hours`.** This shifts the *departure*, re-running
+**On `forecast_offset_hours`.** An API-only field: the form no longer exposes
+it, because a second 0–48 h slider next to the corridor timeline was
+confusing. It shifts the *departure*, re-running
 routing, ETAs, weather and ranking — it can change the recommendation. It is
 **not** the 0–48 h corridor forecast slider, which is a display-only
 control over frames fetched once per route — see *Corridor forecast* under
@@ -445,19 +421,20 @@ exists.
   a checkpoint governs the road *ahead* of it.
 - Checkpoints pulse gently (one `requestAnimationFrame` loop driving two
   paint properties; paused with the tab, off under `prefers-reduced-motion`).
-- Clicking a checkpoint opens its panel: the risk inputs from the analysis,
-  the backend's own explanation of the level, and — with an OpenWeatherMap
-  key — observed conditions **now** and the forecast **at ETA**, kept apart
-  and labelled, with a 3-hourly strip around the arrival time and a °F/°C
-  toggle. Icons are bundled; the browser never calls OpenWeatherMap.
 - Unselected alternatives recede; ineligible ones are drawn in the No-Travel
   colour so "blocked" reads differently from "not chosen".
 - If the basemap fails to load, a banner says so and the rest of the
   dashboard keeps working.
-- **Weather overlays** — precipitation, clouds, wind, temperature — are
-  OpenWeatherMap rasters drawn *under* the routes, fetched through the
-  Django proxy above. The toggle is disabled, with an explanation, when the
-  server has no key; the UI learns that from `/api/v1/health` on load.
+- **Click a checkpoint** (on the map or in the table) and a popup opens on
+  the map at that point: ETA, the three measurements and the level the
+  recommendation was computed from, and a clickable 49-cell strip of that
+  checkpoint's risk over the next 48 hours. Picking a cell moves the
+  timeline, so popup, band and panel never disagree. Closing the popup
+  clears the selection.
+- The panel under the table shows the same checkpoint in full: ETA
+  conditions, the backend's explanation, and an hourly table of the next
+  48 hours at that spot (dashes and *No data* for uncovered hours, never
+  zeros).
 
 ### Corridor forecast (0–48 h)
 
@@ -481,8 +458,7 @@ once by the analysis and are not touched. The caption says so.
 - **What it is not.** This is a checkpoint-sampled visualisation, not a
   radar field. Forty-odd samples at 10/25/50-mile spacing are what the
   analysis has; the band shows exactly that resolution and does not pretend
-  to more. It is also not the OpenWeatherMap raster overlay (which shows
-  current conditions, not the forecast).
+  to more.
 - **The hour strip.** One cell per hour, coloured by the worst risk anywhere
   on the route at that hour — a legend-coloured timeline. Hours the provider
   did not cover are hatched, counted (`3 of 49 hours unavailable`) and shown
@@ -492,68 +468,14 @@ once by the analysis and are not touched. The caption says so.
   pauses it; it stops at the last available hour; reset returns to +0.
   Under `prefers-reduced-motion` the cadence slows. Timers are cleared on
   unmount.
-- **Checkpoint panel.** Selecting a checkpoint shows, in order: its ETA
-  block (what the recommendation is computed from), its forecast at the
-  selected hour (same provider, same classifier, different instant — with the
-  backend's own explanation sentence), and the supplementary OpenWeatherMap
-  conditions. Moving the slider updates the middle block without losing the
-  selection.
+- **Checkpoint panel and popup.** Selecting a checkpoint shows its ETA block
+  (what the recommendation is computed from) and the hourly table of the
+  next 48 hours there; the map popup shows the compact version. Moving the
+  slider highlights the matching hour without losing the selection.
 - **Data flow.** One `POST /api/v1/corridor-forecast` per selected route,
   cached in the hook per analysis, so switching back to a route is free and
   changing the hour never touches the network. A route change aborts an
   in-flight request; a late response can never land on a newer selection.
-
-### Overlay versus forecast — a deliberate distinction
-
-The mockups show a weather raster behind the route. One is now available,
-but it is labelled **now** in the legend on purpose. The overlay is current
-conditions; the route colouring is the *forecast at each checkpoint's ETA*.
-A trip leaving in two days can show green checkpoints under today's rain
-and both be correct. The legend says so whenever an overlay is on, so the
-two are never read as one picture.
-
-What is shown instead is real: risk colouring derived from the actual
-checkpoint classifications, and a wind/rain/snow profile plotted from the
-measurements the analysis used. Gaps in that profile are genuine gaps, not
-interpolated.
-
----
-
-## Repository layout
-
-```
-.
-├─ backend/
-│  ├─ config/               Django project: settings, URLs, WSGI/ASGI
-│  └─ apps/routing/
-│     ├─ domain/            ← PURE. stdlib only. no Django, no I/O, no clock
-│     │  ├─ models.py          value objects: Coordinate, Checkpoint, ...
-│     │  ├─ geo.py             haversine, cumulative measure, interpolation
-│     │  ├─ checkpoints.py     distance-based sampling + ETA assignment
-│     │  ├─ risk.py            thresholds, cargo overrides, combination
-│     │  ├─ aggregation.py     segment attribution, risk miles, coverage
-│     │  └─ ranking.py         deterministic comparator + No Travel policy
-│     ├─ providers/         ← ALL external I/O
-│     │  ├─ base.py            protocols + typed results
-│     │  ├─ errors.py          typed provider errors
-│     │  ├─ http.py            timeouts, retries, caching, redaction
-│     │  ├─ tomtom.py          geocoding + truck routing
-│     │  ├─ openmeteo.py       hourly forecasts
-│     │  ├─ fixtures.py        deterministic offline providers
-│     │  └─ factory.py         selection from settings
-│     ├─ services/          analysis.py · errors.py
-│     ├─ api/               serializers · views · errors · urls
-│     └─ tests/             pytest suite (domain + api)
-├─ frontend/
-│  └─ src/
-│     ├─ features/          trip-form · routes-panel · map · heatmap
-│     ├─ components/        shared presentational components
-│     ├─ api/  hooks/  lib/  types/
-│     └─ test/              Vitest setup
-└─ docs/
-   ├─ architecture.md       components, data flow, boundaries
-   └─ decisions.md          every interpretation and why
-```
 
 ### The one architectural rule
 
@@ -599,7 +521,7 @@ cd backend
 pytest --cov --cov-report=term-missing
 ```
 
-**Backend:** 881 tests, **100% statement coverage of the domain, provider,
+**Backend:** 862 tests, **100% statement coverage of the domain, provider,
 service and API packages** (one unreachable branch arc remains, marked and explained in
 the code). No test requires an API key, network access or a live service:
 every provider interaction is mocked with `respx`, and every payload comes
@@ -610,11 +532,11 @@ that a full analysis makes **zero outbound HTTP requests**. Another asserts
 the suite never reads a developer's local `.env`, so results are identical on
 a laptop with credentials and on CI without them.
 
-**Frontend:** 174 tests (Vitest + Testing Library), covering form validation
+**Frontend:** 162 tests (Vitest + Testing Library), covering form validation
 and timezone serialisation, the request lifecycle including stale-response
 races, one/two/three alternatives, null recommendations, missing weather,
 error mapping, map lifecycle and failure, basemap and overlay switching,
-the checkpoint weather panel, and the corridor timeline — slider labels and
+the checkpoint panel and map popup, place autocomplete, and the corridor timeline — slider labels and
 timestamps, keyboard control, loading/error/unavailable states, playback
 (skipping uncovered hours, pausing on input, timer cleanup), request
 caching and abort/stale protection, and that moving the hour never re-runs
@@ -656,8 +578,6 @@ captured forecasts are never presented as current weather.
 | Geocoding | TomTom Search v2, or offline fixtures | `TOMTOM_API_KEY` (optional) |
 | Truck routing | TomTom Routing v1, or offline fixtures | `TOMTOM_API_KEY` (optional) |
 | Weather | Open-Meteo hourly forecast | **None required** |
-| Map overlays | OpenWeatherMap raster tiles, proxied | `OPENWEATHERMAP_API_KEY` (optional) |
-| Checkpoint detail | OpenWeatherMap current + 5-day/3-hourly, proxied | `OPENWEATHERMAP_API_KEY` (optional) |
 
 Selected via `ROUTING_PROVIDER`, `GEOCODING_PROVIDER` and `WEATHER_PROVIDER`
 (see [.env.example](.env.example)). All three default to a configuration that
