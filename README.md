@@ -9,6 +9,8 @@ option.
 
 **Stack:** React + TypeScript (Vite) · Django REST Framework (Python 3.14)
 
+**Live demo:** <https://weather-truck-routing.netlify.app>
+
 ![Dashboard: Salt Lake City to Chicago, three routes compared, forecast timeline and a checkpoint popup](docs/screenshot.png)
 
 ---
@@ -195,7 +197,9 @@ covers a slow first analysis either way.
 `X-Forwarded-For` rather than throttling every visitor as the proxy's
 single address.
 
-**Live:** _URL to be added once both deploys are up._
+**Live:** <https://weather-truck-routing.netlify.app> (frontend, Netlify) ·
+<https://weather-routing-api-uxax.onrender.com/api/v1/health> (API, Render free
+tier — the first request after 15 idle minutes takes ~30–50 s to wake).
 
 **CI.** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs ruff,
 the Django check and pytest for the backend, and typecheck, lint, Vitest and
