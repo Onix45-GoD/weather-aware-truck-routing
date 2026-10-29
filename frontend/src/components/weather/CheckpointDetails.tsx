@@ -10,7 +10,7 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 
 import type { AnalysedRoute, Checkpoint } from '@/api/types'
 import { RiskChip } from '@/components/route/RiskChip'
@@ -187,47 +187,15 @@ export function CheckpointDetails({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {series.map((item) => {
-                  const isSelected = item.hour === hour
-                  const level = item.available ? (item.risk?.level ?? 'UNKNOWN') : 'UNKNOWN'
-                  return (
-                    <TableRow
-                      key={item.hour}
-                      hover
-                      selected={isSelected}
-                      aria-current={isSelected ? 'time' : undefined}
-                      onClick={() => onHourChange?.(item.hour)}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`+${item.hour} h, ${item.available ? level.toLowerCase() : 'no forecast'}`}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          onHourChange?.(item.hour)
-                        }
-                      }}
-                      sx={{
-                        cursor: onHourChange ? 'pointer' : 'default',
-                        '&.Mui-selected': { backgroundColor: PALETTE.elevated },
-                      }}
-                    >
-                      <TableCell>+{item.hour} h</TableCell>
-                      <TableCell>{clockTime(item.at, timeZone)}</TableCell>
-                      <TableCell align="right">
-                        {measurement(item.available ? item.weather?.wind_mph : null, 'mph', 0)}
-                      </TableCell>
-                      <TableCell align="right">
-                        {measurement(item.available ? item.weather?.rain_in_hr : null, 'in', 2)}
-                      </TableCell>
-                      <TableCell align="right">
-                        {measurement(item.available ? item.weather?.snow_in_hr : null, 'in', 2)}
-                      </TableCell>
-                      <TableCell>
-                        <RiskChip level={level} />
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
+                {series.map((item) => (
+                  <HourRow
+                    key={item.hour}
+                    item={item}
+                    selected={item.hour === hour}
+                    timeZone={timeZone}
+                    onHourChange={onHourChange}
+                  />
+                ))}
               </TableBody>
             </Table>
           </div>
@@ -240,3 +208,58 @@ export function CheckpointDetails({
     </Paper>
   )
 }
+
+/**
+ * One hour of the table. Memoised: moving the timeline re-renders the
+ * panel 49 times a second during playback, and only the previously and
+ * newly selected rows actually change.
+ */
+const HourRow = memo(function HourRow({
+  item,
+  selected,
+  timeZone,
+  onHourChange,
+}: {
+  item: CheckpointHour
+  selected: boolean
+  timeZone?: string | null | undefined
+  onHourChange?: ((hour: number) => void) | undefined
+}) {
+  const level = item.available ? (item.risk?.level ?? 'UNKNOWN') : 'UNKNOWN'
+  return (
+    <TableRow
+      hover
+      selected={selected}
+      aria-current={selected ? 'time' : undefined}
+      onClick={() => onHourChange?.(item.hour)}
+      tabIndex={0}
+      role="button"
+      aria-label={`+${item.hour} h, ${item.available ? level.toLowerCase() : 'no forecast'}`}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onHourChange?.(item.hour)
+        }
+      }}
+      sx={{
+        cursor: onHourChange ? 'pointer' : 'default',
+        '&.Mui-selected': { backgroundColor: PALETTE.elevated },
+      }}
+    >
+      <TableCell>+{item.hour} h</TableCell>
+      <TableCell>{clockTime(item.at, timeZone)}</TableCell>
+      <TableCell align="right">
+        {measurement(item.available ? item.weather?.wind_mph : null, 'mph', 0)}
+      </TableCell>
+      <TableCell align="right">
+        {measurement(item.available ? item.weather?.rain_in_hr : null, 'in', 2)}
+      </TableCell>
+      <TableCell align="right">
+        {measurement(item.available ? item.weather?.snow_in_hr : null, 'in', 2)}
+      </TableCell>
+      <TableCell>
+        <RiskChip level={level} />
+      </TableCell>
+    </TableRow>
+  )
+})

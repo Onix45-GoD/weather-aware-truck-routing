@@ -809,6 +809,28 @@ tool, and a dispatcher abroad still plans in the truck's zone.
 
 ---
 
+## D33. Rate limits are per endpoint and read live — *Decision*
+
+Once hosted, every endpoint is somebody else's quota: an analysis is
+several TomTom and Open-Meteo calls and a corridor is a two-second
+provider call. DRF's `ScopedRateThrottle` gives per-endpoint limits by
+client address with no accounts, which fits a stateless service.
+
+Two choices worth recording. **Live rates:** DRF copies the rate table
+into a class attribute at import, so an environment override read late,
+or a test lowering a limit, is silently ignored; `api/throttling.py` reads
+the table per request instead. **One envelope:** DRF's own 429 body is
+`{"detail": ...}`; a custom exception handler maps `Throttled` into the
+project's error shape with `RATE_LIMITED`, keeps `Retry-After`, and
+echoes the wait in `details` so the UI need not parse headers.
+
+Defaults (12/min analysis, 30/min corridor, 120/min places) are sized to
+what a person does at a keyboard; health is never limited. Tested by
+`tests/api/test_throttling.py`; the API conftest raises the rates for
+every other test so the suite cannot throttle itself.
+
+---
+
 ## Open items for later milestones
 
 ### Closed in Milestone 2

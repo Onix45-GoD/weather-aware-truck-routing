@@ -21,7 +21,7 @@ option.
 | **4** | Frontend dashboard: map, routes, checkpoints | ✅ **Complete** |
 | 5 | Route comparison polish + onboarding | ✅ **Complete** |
 | 6 | Corridor heatmap + 0–48 h forecast slider | ✅ **Complete** |
-| 7 | Hardening (failure paths, a11y, performance) | Not started |
+| 7 | Hardening (failure paths, a11y, performance) | ✅ **Complete** |
 | 8 | Deployment + walkthrough | Not started |
 | 9 | *Optional:* AI route rationale | Not started |
 
@@ -526,6 +526,82 @@ explicitly rather than silently, and each is documented with its rationale in
 
 ---
 
+## Hardening
+
+### Failure paths
+
+Every failure reaches the client in one envelope — `{ "error": { code,
+message, field, details } }` — with a status that carries meaning: 400 for
+input the user can fix (field-level messages attach to the right input),
+422 when no route exists between the points, 429 and 504 forwarded from the
+provider so a client can back off rather than guess, 502 for upstream
+trouble, 500 only for our own bugs (logged with a traceback, never echoed).
+The frontend's `ApiError` splits these into *validation* (fix the form) and
+*retryable* (try again) and says which. Three fetch hooks (analysis,
+corridor, places) abort superseded requests and ignore late responses; a
+MapLibre crash is contained by an error boundary so the analysis stays on
+screen; a provider outage during analysis degrades to UNKNOWN checkpoints
+and a warning, and the coverage gate then refuses to recommend on absent
+data.
+
+### Rate limits
+
+Per client address, per endpoint, read live from settings so an environment
+override applies without a restart (`THROTTLE_ANALYSIS`, `THROTTLE_CORRIDOR`,
+`THROTTLE_PLACES`). Sized to a person, not a script:
+
+| Endpoint | Default | Why |
+|---|---|---|
+| `POST /route-analysis` | 12/min | several provider calls each |
+| `POST /corridor-forecast` | 30/min | ~2 s of provider work each (cached after) |
+| `GET /places` | 120/min | fires per keystroke after a 250 ms debounce |
+| `GET /health` | unlimited | liveness must never be throttled |
+
+A 429 uses the same envelope (`RATE_LIMITED`), carries `Retry-After` and
+echoes `retry_after_seconds` in `details`. Scopes are independent:
+exhausting `places` does not block an analysis. Verified live: 120
+`/places` calls admitted, the 121st refused with `Retry-After: 36`.
+
+### Accessibility
+
+- **Automated:** an axe-core audit (`src/a11y.test.tsx`) runs over the
+  first-visit page, the analysed dashboard, the checkpoint-selected state,
+  the map popup, the timeline and the comparison table on every test run.
+  Colour contrast is excluded there because jsdom cannot compute it; the
+  palette was chosen for ≥ 4.5:1 on the dark panels and the risk colours
+  are never the only carrier of meaning (every level has a label).
+- **Keyboard:** a *Skip to results* link is the first tab stop; table rows,
+  comparison rows, hour cells and worst-checkpoint entries are real buttons
+  with Enter/Space; the slider exposes its value as a timestamp
+  (`aria-valuetext`); opening a checkpoint moves focus into the map popup
+  (its close button) and Escape closes it; the help dialog is a real dialog.
+- **Motion:** the checkpoint pulse is off and playback slows under
+  `prefers-reduced-motion`.
+- **Announcements:** the selected forecast hour and the corridor loading
+  state are `aria-live="polite"`.
+
+### Performance
+
+Production build, served locally, measured in Chrome through the browser's
+own performance APIs (Playwright, headless, median of five cold loads;
+Lighthouse could not be installed in the build environment):
+
+| Metric | Value |
+|---|---|
+| First / largest contentful paint | 612 ms |
+| Cumulative layout shift | 0 |
+| Total blocking time | 349 ms (two long tasks: initial bundle parse + first render) |
+| Transferred on first load | 493 KB over 5 requests (map chunk loads after the form) |
+
+What keeps it there: the 1.1 MB MapLibre chunk is code-split behind the
+form; the corridor's 49 frames arrive once per route (~860 KB raw, ~28 KB
+gzipped) and scrubbing the hour is a `setData` on existing sources, never a
+re-render of the map; the 49-row hourly table memoises its rows so playback
+re-renders only the two rows whose selection changed; place suggestions are
+debounced, cached and skipped for untouched defaults. The obvious next
+step, if the remaining blocking time matters, is splitting MUI's icon and
+dialog imports out of the first paint.
+
 ## Testing
 
 ```powershell
@@ -533,7 +609,7 @@ cd backend
 pytest --cov --cov-report=term-missing
 ```
 
-**Backend:** 862 tests, **100% statement coverage of the domain, provider,
+**Backend:** 869 tests, **100% statement coverage of the domain, provider,
 service and API packages** (one unreachable branch arc remains, marked and explained in
 the code). No test requires an API key, network access or a live service:
 every provider interaction is mocked with `respx`, and every payload comes
@@ -544,7 +620,7 @@ that a full analysis makes **zero outbound HTTP requests**. Another asserts
 the suite never reads a developer's local `.env`, so results are identical on
 a laptop with credentials and on CI without them.
 
-**Frontend:** 162 tests (Vitest + Testing Library), covering form validation
+**Frontend:** 200 tests (Vitest + Testing Library + axe-core), covering form validation
 and timezone serialisation, the request lifecycle including stale-response
 races, one/two/three alternatives, null recommendations, missing weather,
 error mapping, map lifecycle and failure, basemap and overlay switching,

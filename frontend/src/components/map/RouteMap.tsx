@@ -611,6 +611,24 @@ export function RouteMap({
     }
 
     popupRef.current.setLngLat([popupLng, popupLat]).addTo(map)
+
+    // Keyboard users: focus lands in the popup (its close button is the
+    // first control) and Escape dismisses it, like a dialog.
+    const shell = popupNode.closest('.maplibregl-popup')
+    const closeButton = shell?.querySelector<HTMLElement>('.maplibregl-popup-close-button')
+    if (closeButton) {
+      closeButton.setAttribute('aria-label', 'Close checkpoint weather')
+      closeButton.focus({ preventScroll: true })
+    }
+    const onKeyDown = (event: Event) => {
+      if ((event as KeyboardEvent).key === 'Escape') {
+        event.stopPropagation()
+        handlers.current.onSelectCheckpoint(null)
+      }
+    }
+    const target = shell ?? popupNode
+    target.addEventListener('keydown', onKeyDown)
+    return () => target.removeEventListener('keydown', onKeyDown)
   }, [ready, styleGeneration, popupLat, popupLng, popupNode])
 
   // Fit to the routes once they change, not on every render.

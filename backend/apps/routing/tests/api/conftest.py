@@ -25,6 +25,21 @@ def offline_providers(settings):
 
 
 @pytest.fixture(autouse=True)
+def generous_throttles(settings):
+    """Rate limits exist for people, not for a test suite that posts
+    forty requests a second. Each throttle test lowers them explicitly.
+    """
+    settings.REST_FRAMEWORK = {
+        **settings.REST_FRAMEWORK,
+        "DEFAULT_THROTTLE_RATES": {
+            "analysis": "100000/min",
+            "corridor": "100000/min",
+            "places": "100000/min",
+        },
+    }
+
+
+@pytest.fixture(autouse=True)
 def clear_provider_cache():
     django_cache.clear()
     yield

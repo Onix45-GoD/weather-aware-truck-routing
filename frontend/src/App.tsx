@@ -181,6 +181,12 @@ export default function App() {
 
   return (
     <div className="flex h-full min-h-0 w-full">
+      <a
+        href="#results"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-elevated focus:px-3 focus:py-2 focus:text-ink"
+      >
+        Skip to results
+      </a>
       <div className="flex min-w-0 flex-1 flex-col">
         <Header
           analysis={data}
@@ -189,7 +195,7 @@ export default function App() {
         />
         {isLoading && <LinearProgress />}
 
-        <main className="scroll-area flex-1 p-3">
+        <main id="results" className="scroll-area flex-1 p-3" tabIndex={-1}>
           {/* 1440px: form | map | alternatives. Collapses to one column on
               smaller screens rather than shrinking all three. */}
           <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_320px]">

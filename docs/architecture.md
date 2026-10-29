@@ -60,6 +60,7 @@ all exist today. The frontend features arrive in Milestones 4–6.
 | `services/places.py` | Type-ahead place suggestions from the configured geocoder. |
 | `services/errors.py` | `AnalysisError`, `AmbiguousLocationError` — a valid request that cannot yield a trustworthy answer. |
 | `api/serializers.py` | Request validation (including timezone resolution) and response shaping. |
+| `api/throttling.py` | Per-endpoint rate limits by client address, read live from settings so an env override or a test applies. 429s use the shared error envelope. |
 | `api/errors.py` | Typed error → HTTP status, one envelope for every failure. |
 | `api/views.py` | `RouteAnalysisView`, `HealthView`. Validate, delegate, shape. |
 

@@ -23,6 +23,7 @@ from apps.routing.services.errors import AnalysisError
 
 from .corridor import CorridorForecastRequestSerializer, serialise_corridor
 from .errors import error_response, exception_to_response
+from .throttling import ScopedThrottle
 from .serializers import RouteAnalysisRequestSerializer, serialise_analysis
 
 __all__ = ["CorridorForecastView", "HealthView", "PlacesView", "RouteAnalysisView"]
@@ -50,6 +51,9 @@ class RouteAnalysisView(APIView):
     Stateless: nothing is stored, no session is read, and two identical
     requests produce identical output for identical provider responses.
     """
+
+    throttle_classes = [ScopedThrottle]
+    throttle_scope = "analysis"
 
     def post(self, request: Request) -> Response:
         serializer = RouteAnalysisRequestSerializer(data=request.data)
@@ -107,6 +111,9 @@ class CorridorForecastView(APIView):
     second view of the same forecast, not a second analysis.
     """
 
+    throttle_classes = [ScopedThrottle]
+    throttle_scope = "corridor"
+
     def post(self, request: Request) -> Response:
         serializer = CorridorForecastRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -158,6 +165,9 @@ class PlacesView(APIView):
     picks is a place the analysis will resolve. Too-short queries get an
     empty list rather than an error: the form calls this on every keystroke.
     """
+
+    throttle_classes = [ScopedThrottle]
+    throttle_scope = "places"
 
     def get(self, request: Request) -> Response:
         query = str(request.query_params.get("q", "")).strip()

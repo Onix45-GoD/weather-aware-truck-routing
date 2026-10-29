@@ -91,6 +91,18 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [],
+    # Every failure, throttling included, uses the one error envelope.
+    "EXCEPTION_HANDLER": "apps.routing.api.errors.exception_handler",
+    # Per-endpoint limits, by client address (there are no accounts).
+    # Each view opts in with `throttle_scope`; the health probe is free.
+    # Sized to what one human can do, not what a script can: an analysis
+    # is several provider calls, a corridor is a 2-second provider call,
+    # and places fires on every keystroke after a debounce.
+    "DEFAULT_THROTTLE_RATES": {
+        "analysis": os.environ.get("THROTTLE_ANALYSIS", "12/min"),
+        "corridor": os.environ.get("THROTTLE_CORRIDOR", "30/min"),
+        "places": os.environ.get("THROTTLE_PLACES", "120/min"),
+    },
 }
 
 # --- Provider selection -----------------------------------------------------

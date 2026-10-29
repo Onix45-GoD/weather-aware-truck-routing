@@ -19,7 +19,9 @@ import logging
 from typing import Any
 
 from rest_framework import status
+from rest_framework.exceptions import Throttled
 from rest_framework.response import Response
+from rest_framework.views import exception_handler as drf_exception_handler
 
 from apps.routing.providers.errors import (
     GeocodingNoResultsError,
@@ -35,7 +37,7 @@ from apps.routing.providers.errors import (
 )
 from apps.routing.services.errors import AmbiguousLocationError, AnalysisError
 
-__all__ = ["error_response", "exception_to_response"]
+__all__ = ["error_response", "exception_handler", "exception_to_response"]
 
 logger = logging.getLogger(__name__)
 
@@ -131,3 +133,27 @@ def _known_error_response(exc: Exception, http_status: int) -> Response:
         field=field,
         retry_after_seconds=retry_after,
     )
+
+
+def exception_handler(exc: Exception, context: Any) -> Response | None:
+    """DRF's hook for errors raised *before* a view body runs.
+
+    Throttling is the one that matters: DRF would answer with its own
+    ``{"detail": ...}`` shape, and a client that has learnt one error
+    envelope should never meet a second. The ``Retry-After`` header DRF
+    sets is kept, and echoed in the body so a UI can show a countdown
+    without parsing headers.
+    """
+    if isinstance(exc, Throttled):
+        wait = exc.wait
+        return error_response(
+            code="RATE_LIMITED",
+            message=(
+                "Too many requests from this address. Try again in "
+                + (f"{int(wait)} seconds." if wait else "a moment.")
+            ),
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            details={"retry_after_seconds": int(wait) if wait else None},
+            retry_after_seconds=wait,
+        )
+    return drf_exception_handler(exc, context)
