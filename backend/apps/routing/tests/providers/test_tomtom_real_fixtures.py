@@ -234,24 +234,20 @@ class TestRealRoutingResponse:
             router.routes(DENVER, CHICAGO, DEPARTURE)
 
 
-class TestCargoWeightSafetyAgainstRealResponse:
+class TestVehicleWeightAgainstRealResponse:
     @respx.mock
-    def test_no_vehicle_weight_is_sent_when_routing_for_real(
-        self, router, real_route
-    ) -> None:
-        """The D16 rule, re-asserted on the real request path.
-
-        Cargo weight is not gross vehicle weight. Sending one as the other
-        could route a loaded truck over a bridge it must not cross.
+    def test_gross_weight_goes_out_as_integer_kilograms(self, router, real_route) -> None:
+        """The D16 rule on the real request path: gross weight in whole kg,
+        and no other vehicle dimension we do not actually know.
         """
         route = respx.get(url__startswith=ROUTING_HOST).mock(
             return_value=httpx.Response(200, json=real_route)
         )
-        router.routes(DENVER, CHICAGO, DEPARTURE)
+        router.routes(DENVER, CHICAGO, DEPARTURE, vehicle_weight_kg=34_019.43)
 
         params = route.calls.last.request.url.params
+        assert params["vehicleWeight"] == "34019"
         for forbidden in (
-            "vehicleWeight",
             "vehicleAxleWeight",
             "vehicleLength",
             "vehicleHeight",

@@ -117,6 +117,12 @@ WEATHER_PROVIDER = os.environ.get("WEATHER_PROVIDER", "open-meteo")
 # `apps.routing.providers.factory.provider_status`.
 TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "")
 
+# Empty weight of the tractor and trailer, in pounds. The assessment gives
+# cargo weight; TomTom's `vehicleWeight` wants gross weight, so the two are
+# added before the request (D16). 35,000 lb is a typical sleeper tractor
+# plus a 53-foot dry van; override for a different fleet.
+TRUCK_TARE_WEIGHT_LB = float(os.environ.get("TRUCK_TARE_WEIGHT_LB", 35_000))
+
 # Cache TTLs in seconds. Geocoding results are effectively static; forecasts
 # are refreshed on the half hour; routes change with traffic.
 PROVIDER_CACHE_TTL = {

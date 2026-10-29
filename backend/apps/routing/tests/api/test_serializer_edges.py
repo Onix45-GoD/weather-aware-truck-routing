@@ -163,7 +163,7 @@ class TestEmptyRouteSet:
         class EmptyRouter:
             name = "empty"
 
-            def routes(self, origin, destination, departure_time, *, max_alternatives=2):
+            def routes(self, origin, destination, departure_time, *, max_alternatives=2, vehicle_weight_kg=None):
                 return RouteSet(
                     routes=(),
                     provider=self.name,

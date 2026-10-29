@@ -183,11 +183,15 @@ class RoutingProvider(Protocol):
         departure_time: datetime,
         *,
         max_alternatives: int = 2,
+        vehicle_weight_kg: float | None = None,
     ) -> RouteSet:
         """Route from ``origin`` to ``destination``.
 
         ``max_alternatives`` is how many routes to request *in addition to*
         the primary one, so the default of 2 asks for up to three candidates.
+        ``vehicle_weight_kg`` is the **gross** vehicle weight -- cargo plus
+        tare -- for providers that apply weight restrictions; ``None`` asks
+        for generic truck routing.
         """
         ...
 

@@ -131,7 +131,9 @@ class StubRouter:
         departure_time: datetime,
         *,
         max_alternatives: int = 2,
+        vehicle_weight_kg: float | None = None,
     ) -> RouteSet:
+        self.last_vehicle_weight_kg = vehicle_weight_kg
         self.calls.append(departure_time)
         if self.error is not None:
             raise self.error

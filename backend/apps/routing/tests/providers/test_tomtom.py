@@ -308,21 +308,20 @@ class TestRoutingRequest:
         assert route.calls.last.request.url.params["maxAlternatives"] == "5"
 
     @respx.mock
-    def test_cargo_weight_is_never_sent_as_a_vehicle_weight(self, router) -> None:
-        """The assessment gives cargo weight, not gross vehicle weight.
-
-        Sending one as the other would understate the truck's mass by roughly
-        30,000 lb and could route it over a bridge it must not cross.
+    def test_gross_vehicle_weight_is_sent_in_whole_kilograms(self, router) -> None:
+        """The caller supplies gross weight in kg; the adapter forwards it as an
+        integer `vehicleWeight` and nothing else about the vehicle.
         """
         route = respx.get(url__startswith=ROUTING_HOST).mock(
             return_value=httpx.Response(
                 200, json=tomtom("synthetic_route_three_alternatives.json")
             )
         )
-        router.routes(DENVER, CHICAGO, DEPARTURE)
+        router.routes(DENVER, CHICAGO, DEPARTURE, vehicle_weight_kg=34_019.43)
         params = route.calls.last.request.url.params
+        assert params["vehicleWeight"] == "34019"
+        assert params["travelMode"] == "truck"
         for forbidden in (
-            "vehicleWeight",
             "vehicleAxleWeight",
             "vehicleLength",
             "vehicleHeight",
@@ -331,6 +330,20 @@ class TestRoutingRequest:
             "vehicleLoadType",
         ):
             assert forbidden not in params
+
+    @respx.mock
+    def test_no_weight_means_no_vehicle_weight_parameter(self, router) -> None:
+        route = respx.get(url__startswith=ROUTING_HOST).mock(
+            return_value=httpx.Response(
+                200, json=tomtom("synthetic_route_three_alternatives.json")
+            )
+        )
+        router.routes(DENVER, CHICAGO, DEPARTURE)
+        assert "vehicleWeight" not in route.calls.last.request.url.params
+
+    def test_non_positive_weight_is_rejected(self, router) -> None:
+        with pytest.raises(ValueError):
+            router.routes(DENVER, CHICAGO, DEPARTURE, vehicle_weight_kg=0)
 
     def test_naive_departure_time_is_rejected(self, router) -> None:
         with pytest.raises(ValueError, match="timezone-aware"):

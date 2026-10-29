@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from django.conf import settings
 from rest_framework import serializers
 
 from apps.routing.domain.geo import simplify_polyline
@@ -258,6 +259,7 @@ class RouteAnalysisRequestSerializer(serializers.Serializer):
             checkpoint_interval_miles=int(data["checkpoint_interval_miles"]),
             forecast_offset_hours=int(data.get("forecast_offset_hours") or 0),
             departure_timezone=data.get("departure_timezone") or None,
+            tare_weight_lb=float(getattr(settings, "TRUCK_TARE_WEIGHT_LB", 35_000.0)),
         )
 
 
@@ -440,6 +442,10 @@ def serialise_analysis(result: AnalysisResult) -> dict[str, Any]:
             ),
             "forecast_offset_hours": request.forecast_offset_hours,
             "load_weight_lb": request.load_weight_lb,
+            # What the router was actually asked to route for (D16).
+            "tare_weight_lb": request.tare_weight_lb,
+            "gross_weight_lb": request.gross_weight_lb,
+            "vehicle_weight_kg": round(request.vehicle_weight_kg),
             "checkpoint_interval_miles": request.checkpoint_interval_miles,
         },
         "origin": {

@@ -33,6 +33,7 @@ from apps.routing.domain.models import (
     WeatherSample,
 )
 from apps.routing.domain.ranking import MIN_COVERAGE_PCT, RankingResult, rank_routes
+from apps.routing.domain.units import pounds_to_kilograms
 from apps.routing.providers.base import (
     GeocodeResult,
     GeocodingProvider,
@@ -124,6 +125,19 @@ class AnalysisRequest:
         }:
             raise ValueError("checkpoint_interval_miles must be 10, 25 or 50")
 
+    #: Empty tractor + trailer weight, in pounds, added to the cargo to form
+    #: the gross weight the routing provider is given (D16).
+    tare_weight_lb: float = 35_000.0
+
+    @property
+    def gross_weight_lb(self) -> float:
+        return self.load_weight_lb + self.tare_weight_lb
+
+    @property
+    def vehicle_weight_kg(self) -> float:
+        """What the routing provider is asked to route for."""
+        return pounds_to_kilograms(self.gross_weight_lb)
+
     @property
     def effective_departure_at(self) -> datetime:
         """When the truck actually leaves, once the offset is applied."""
@@ -194,7 +208,11 @@ def analyse_trip(
     origin, destination = _geocode_endpoints(request, geocoder, warnings)
 
     route_set = router.routes(
-        origin.coordinate, destination.coordinate, departure, max_alternatives=2
+        origin.coordinate,
+        destination.coordinate,
+        departure,
+        max_alternatives=2,
+        vehicle_weight_kg=request.vehicle_weight_kg,
     )
     for notice in route_set.notices:
         warnings.append(AnalysisWarning(code="ROUTING_NOTICE", message=notice))

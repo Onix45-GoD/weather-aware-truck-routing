@@ -358,30 +358,38 @@ Nothing in the assessment requires persistence. `DATABASES` is empty, and
 
 ---
 
-## D16. Cargo weight is never sent to the routing API — *Decision*
+## D16. The router gets gross vehicle weight — cargo plus a documented tare — *Decision (revised)*
 
 **The trap.** The assessment supplies **cargo load weight**. TomTom's
 `vehicleWeight` parameter means **gross vehicle weight** — tractor plus
-trailer plus cargo. They differ by roughly 30,000 lb for a typical rig.
+trailer plus cargo, in kilograms. They differ by roughly 30,000 lb for a
+typical rig, and passing the cargo figure as the vehicle weight would make
+the provider apply restrictions calibrated to a truck far lighter than the
+real one — a loaded truck routed across a bridge it may not cross.
 
-Passing the cargo figure as `vehicleWeight` would be worse than passing
-nothing: the provider would apply weight restrictions calibrated to a vehicle
-far lighter than the real one, and could route a loaded truck across a bridge
-it is not permitted to cross. Inventing a tare weight to add would be
-fabricating vehicle data we were never given.
+**First decision (Milestone 2).** Send no weight at all and state the
+limitation. Safe, but it left the provider's weight restrictions unused.
 
-**The decision.** The adapter sends `travelMode=truck` and **no
-vehicle-weight, axle, height, length or width parameter at all**. The
-assessment's cargo-weight rules are a *risk-scoring* input and stay in
-`apps/routing/domain/risk.py`, which is where they belong.
+**Revised decision (Milestone 8).** Send the **gross** weight: cargo plus a
+tare that is a named, documented setting (`TRUCK_TARE_WEIGHT_LB`, default
+35,000 lb — a sleeper tractor with a 53 ft dry van), converted with the
+exact factor 0.45359237 kg/lb in `domain/units.py` and rounded to whole
+kilograms at the adapter. The service does the arithmetic; the adapter only
+forwards a gross figure, and refuses a non-positive one. The response
+echoes `tare_weight_lb`, `gross_weight_lb` and `vehicle_weight_kg`, so the
+number the router saw is auditable from the client.
 
-**The limitation, stated rather than hidden.** Returned routes respect generic
-truck restrictions but **not** weight-, height-, length- or axle-specific
-ones. Closing that gap requires collecting real vehicle specifications from
-the user — a product decision, not something to paper over with a guess.
+What is still **not** sent: height, length, width, axle weight. We have no
+data for them and inventing it would be worse than omitting it.
 
-**Tested by** `test_cargo_weight_is_never_sent_as_a_vehicle_weight`, which
-asserts none of those parameters appears in the outgoing request.
+The assessment's cargo-weight *risk* rules are unchanged and still use the
+cargo figure alone; gross weight is a routing input only.
+
+**Tested by** `test_gross_vehicle_weight_is_sent_in_whole_kilograms`,
+`test_no_weight_means_no_vehicle_weight_parameter`, the real-fixture
+variant, `tests/services/test_vehicle_weight.py` (the bare cargo figure
+never reaches the router) and `tests/domain/test_units.py` (the conversion
+at its boundaries).
 
 ---
 

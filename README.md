@@ -9,6 +9,8 @@ option.
 
 **Stack:** React + TypeScript (Vite) · Django REST Framework (Python 3.14)
 
+![Dashboard: Salt Lake City to Chicago, three routes compared, forecast timeline and a checkpoint popup](docs/screenshot.png)
+
 ---
 
 ## Status
@@ -43,6 +45,32 @@ panel, and a weather profile — all driven by real analysis results.
 **No API key is required to run or test anything in this repository.** The
 defaults are the offline fixture providers plus Open-Meteo (which needs no
 key), and the entire test suite runs with no network access.
+
+---
+
+## Why these APIs
+
+| Need | Choice | Why |
+|---|---|---|
+| Truck routing with alternatives | **TomTom Calculate Route** | One call with `travelMode=truck`, `maxAlternatives=2` and `vehicleWeight` (gross, in kilograms — see below) returns up to three truck-aware routes with per-leg timings. Weight restrictions are applied by the provider, not approximated here. |
+| Weather at many points | **Open-Meteo** | No API key, hourly data 16 days out, and a multi-location request: every checkpoint on every route is one batched call. Wind can be requested in mph and precipitation in inches, so the risk engine never converts a unit before a threshold comparison. |
+| Map | **MapLibre GL** | Free, no token, WebGL. Frames are swapped with `setData` on existing sources, so scrubbing 49 hours of corridor forecast never rebuilds a layer. |
+
+**Not OpenRouteService.** ORS also offers truck profiles and alternative
+routes, but its alternatives are documented by a maintainer as closer to a
+proof of concept with variable quality, and users report failures once a
+route with alternatives exceeds roughly 100 km. Truck trips are routinely ten
+times that, so the feature this app depends on most is the one ORS supports
+least. TomTom's alternatives have no such limit.
+
+**Vehicle weight.** The assessment supplies *cargo* weight. TomTom's
+`vehicleWeight` means *gross* vehicle weight. Sending one as the other would
+understate a loaded rig by ~30,000 lb and could route it over a bridge it
+must not cross, so the service adds a documented tare (`TRUCK_TARE_WEIGHT_LB`,
+default 35,000 lb — a sleeper tractor plus a 53 ft dry van) and converts with
+the exact factor 0.45359237 kg/lb. The response echoes `gross_weight_lb` and
+`vehicle_weight_kg` so the number the router saw is never a mystery. The risk
+engine's cargo-weight rules still use the cargo figure alone ([D16](docs/decisions.md)).
 
 ---
 
@@ -523,6 +551,7 @@ explicitly rather than silently, and each is documented with its rationale in
 | Missing forecast data | `UNKNOWN`, never `LOW`. Tracked as unknown miles, excluded from the average, reported as a coverage percentage. |
 | Routes containing No Travel | **Blocked**: displayed in full, never recommended while an eligible route exists. If every route is blocked, the recommendation is `null`. |
 | Ties after all four criteria | Fewest unknown miles → provider order → route id. Guarantees a **total order**. |
+| Which weight the router sees | **Cargo + tare**, converted to kilograms. The cargo figure alone is never sent; the tare is a setting and both numbers are echoed in the response. |
 
 ---
 
@@ -674,11 +703,10 @@ needs no credentials.
 Two provider behaviours are worth knowing about before reading the code; both
 are explained in full in [docs/decisions.md](docs/decisions.md):
 
-- **Cargo weight is never sent to the routing API.** The assessment supplies
-  *cargo load weight*; TomTom's `vehicleWeight` means *gross vehicle weight*.
-  They are not the same number, and conflating them could route a heavy truck
-  over a bridge it must not cross. The limitation this leaves is documented
-  rather than guessed around (D16).
+- **The routing API gets gross weight, in kilograms.** The assessment supplies
+  *cargo* weight; TomTom's `vehicleWeight` means *gross* weight. The service
+  adds a documented tare and converts exactly; the cargo figure alone is
+  never sent (D16).
 - **Open-Meteo's `snowfall` is snow depth, not liquid equivalent** — verified
   against live responses, not assumed (D17).
 

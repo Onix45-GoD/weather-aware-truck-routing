@@ -8,21 +8,20 @@ Endpoints (TomTom docs, checked 2026-10-28):
 Both authenticate with a ``key`` query parameter, which is why every log
 line, exception and cache key goes through :func:`...http.redact` first.
 
-Cargo weight is deliberately NOT sent
--------------------------------------
+Vehicle weight: gross, in kilograms, never the bare cargo figure
+----------------------------------------------------------------
 TomTom's ``vehicleWeight`` parameter means **gross vehicle weight** -- tractor
-plus trailer plus cargo. The assessment gives us only the *cargo load weight*.
-Passing one as the other would understate the vehicle's real mass by roughly
-30,000 lb and could route a heavy truck over a bridge it must not cross, so
-this adapter sends no vehicle-weight parameter at all.
+plus trailer plus cargo -- in kilograms. The assessment gives us the *cargo*
+weight in pounds. The service layer adds a documented tare
+(``TRUCK_TARE_WEIGHT_LB``, default 35,000 lb) and converts with the exact
+pound-to-kilogram factor; this adapter only forwards the result. Sending the
+cargo figure alone would understate the vehicle's mass by roughly 30,000 lb
+and could route a loaded truck over a bridge it must not cross, which is why
+the adapter takes a *gross* weight and the caller does the arithmetic.
 
-The consequence, stated plainly rather than papered over: returned routes
-respect generic truck restrictions (``travelMode=truck``) but **not**
-weight-, height-, length- or axle-specific ones, because we do not have that
-data and will not invent it. The assessment's cargo-weight rules are a
-*risk-scoring* input and live in :mod:`apps.routing.domain.risk`, which is the
-only place they belong. Collecting real vehicle specifications would be the
-fix; guessing them would not.
+Height, length, width and axle limits are still not sent: we have no data
+for them and will not invent it. Routes respect generic truck restrictions
+and weight restrictions; the rest would need real vehicle specifications.
 """
 
 from __future__ import annotations
@@ -240,6 +239,7 @@ class TomTomRoutingProvider(_TomTomBase):
         departure_time: datetime,
         *,
         max_alternatives: int = 2,
+        vehicle_weight_kg: float | None = None,
     ) -> RouteSet:
         """Request a truck route plus up to ``max_alternatives`` alternatives.
 
@@ -267,8 +267,13 @@ class TomTomRoutingProvider(_TomTomBase):
             "routeRepresentation": "polyline",
             "traffic": "true",
             "departAt": _rfc3339(departure_time),
-            # NOTE: no vehicleWeight. See the module docstring.
         }
+        if vehicle_weight_kg is not None:
+            if vehicle_weight_kg <= 0:
+                raise ValueError("vehicle_weight_kg must be positive")
+            # Whole kilograms: the API takes an integer, and a gram of
+            # precision on a 30-tonne rig is noise.
+            params["vehicleWeight"] = int(round(vehicle_weight_kg))
 
         payload = self.client.get_json(
             ROUTING_URL.format(locations=locations), params

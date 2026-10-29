@@ -63,6 +63,11 @@ export interface NormalisedRequest {
   effective_departure_at_local: string | null
   forecast_offset_hours: number
   load_weight_lb: number
+  /** Empty tractor + trailer weight the server added before routing. */
+  tare_weight_lb?: number
+  gross_weight_lb?: number
+  /** What the routing provider was asked to route for, whole kilograms. */
+  vehicle_weight_kg?: number
   checkpoint_interval_miles: number
 }
 

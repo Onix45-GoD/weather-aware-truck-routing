@@ -130,7 +130,11 @@ class FixtureRoutingProvider:
         departure_time: datetime,
         *,
         max_alternatives: int = 2,
+        vehicle_weight_kg: float | None = None,
     ) -> RouteSet:
+        # Synthetic routes have no weight restrictions to apply; the parameter
+        # is accepted so the fixture satisfies the same protocol.
+        del vehicle_weight_kg
         if departure_time.tzinfo is None:
             raise ValueError("departure_time must be timezone-aware")
 
