@@ -178,7 +178,7 @@ process. The whole configuration is in the repo.
 
 | Part | Host | Config | What to set |
 |---|---|---|---|
-| Frontend | **Netlify** | [`netlify.toml`](netlify.toml) — base `frontend`, `npm ci && npm run build`, publish `frontend/dist`, SPA redirect, security headers | `VITE_API_BASE_URL` = the API origin (public; never a secret) |
+| Frontend | **Netlify** | [`netlify.toml`](netlify.toml) — base `frontend`, `npm ci && npm run build`, publish `dist` (relative to the base), SPA redirect, security headers | `VITE_API_BASE_URL` = the API origin (public; never a secret) |
 | Backend | **Render** (free web service) | [`backend/render.yaml`](backend/render.yaml) Blueprint, [`backend/Procfile`](backend/Procfile), gunicorn | `TOMTOM_API_KEY`, `CORS_ALLOWED_ORIGINS` = the Netlify site origin; the rest is in the Blueprint |
 
 Order: deploy the backend first (its URL is the frontend's one setting),

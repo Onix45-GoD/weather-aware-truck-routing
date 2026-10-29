@@ -6,8 +6,8 @@
 [build]
   base = "frontend"
   command = "npm ci && npm run build"
-  # Relative to the repository root, not to `base`.
-  publish = "frontend/dist"
+  # Relative to `base` (Netlify resolves publish under the base directory).
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "24"
