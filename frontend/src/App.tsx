@@ -12,7 +12,8 @@ import { Header } from '@/components/layout/Header'
 import { CheckpointPopup } from '@/components/map/CheckpointPopup'
 import { LazyRouteMap } from '@/components/map/LazyRouteMap'
 import { RouteCard } from '@/components/route/RouteCard'
-import { RouteSummary } from '@/components/route/RouteSummary'
+import { RouteComparison } from '@/components/route/RouteComparison'
+import { RouteDetail } from '@/components/route/RouteDetail'
 import { CheckpointDetails } from '@/components/weather/CheckpointDetails'
 import { CheckpointTable } from '@/components/weather/CheckpointTable'
 import { ForecastTimeline } from '@/features/corridor/ForecastTimeline'
@@ -220,7 +221,22 @@ export default function App() {
                 />
               )}
 
-              {data && <RouteSummary analysis={data} route={selectedRoute} />}
+              {data && (
+                <RouteComparison
+                  analysis={data}
+                  selectedRouteId={selectedRouteId}
+                  onSelect={handleSelectRoute}
+                />
+              )}
+
+              {data && (
+                <RouteDetail
+                  analysis={data}
+                  route={selectedRoute}
+                  timeZone={timeZone}
+                  onSelectCheckpoint={setSelectedCheckpoint}
+                />
+              )}
             </section>
 
             <aside

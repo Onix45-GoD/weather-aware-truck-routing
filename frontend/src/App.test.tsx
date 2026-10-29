@@ -92,10 +92,11 @@ describe('successful analysis', () => {
     renderApp()
     await submit()
 
-    expect(await screen.findByText('Recommended')).toBeVisible()
-    expect(
-      screen.getByText(/fewest severe miles/i),
-    ).toBeVisible()
+    // The chip appears on the card, in the comparison table and in the
+    // detail panel; the alternatives panel is the one this test is about.
+    const panel = await screen.findByRole('complementary', { name: /route alternatives/i })
+    expect(within(panel).getByText('Recommended')).toBeVisible()
+    expect(screen.getByTestId('route-why')).toHaveTextContent(/fewest severe miles/i)
   })
 
   it('shows the headline metrics from the API', async () => {
@@ -140,8 +141,8 @@ describe('route selection', () => {
     renderApp()
     const user = await submit()
 
-    await screen.findByText('Alternative 2')
-    await user.click(screen.getByRole('button', { name: /alternative 2/i }))
+    const panel = await screen.findByRole('complementary', { name: /route alternatives/i })
+    await user.click(within(panel).getByRole('button', { name: /alternative 2/i }))
 
     await waitFor(() =>
       expect(screen.getByTestId('map-container')).toHaveAttribute(
@@ -235,9 +236,10 @@ describe('no safe route', () => {
     renderApp()
     await submit()
 
-    expect(await screen.findByText('Not usable')).toBeVisible()
+    const panel = await screen.findByRole('complementary', { name: /route alternatives/i })
+    expect(within(panel).getByText('Not usable')).toBeVisible()
     expect(
-      screen.getByText(/no travel conditions over 50.0 mi/i),
+      within(panel).getByText(/no travel conditions over 50.0 mi/i),
     ).toBeVisible()
   })
 })
