@@ -26,7 +26,7 @@ export function Header({ analysis, onOpenTripForm, onOpenHelp }: HeaderProps) {
       <div className="flex min-w-0 items-center gap-3">
         {!logoFailed && (
           <img
-            src="/logo.png"
+            src="/logo.svg"
             alt=""
             width={32}
             height={32}

@@ -26,7 +26,7 @@ option.
 | 5 | Route comparison polish + onboarding | ✅ **Complete** |
 | 6 | Corridor heatmap + 0–48 h forecast slider | ✅ **Complete** |
 | 7 | Hardening (failure paths, a11y, performance) | ✅ **Complete** |
-| 8 | Deployment + walkthrough | Not started |
+| 8 | Deployment + walkthrough | ✅ **Complete** — [live](https://weather-truck-routing.netlify.app) |
 | 9 | *Optional:* AI route rationale | Not started |
 
 Milestone 1 delivered the scoring engine the assessment weights most heavily —
@@ -746,6 +746,27 @@ are explained in full in [docs/decisions.md](docs/decisions.md):
   never sent (D16).
 - **Open-Meteo's `snowfall` is snow depth, not liquid equivalent** — verified
   against live responses, not assumed (D17).
+
+---
+
+## What I'd do with more time
+
+- **Per-point ETAs from TomTom.** Single-leg routes carry no per-segment
+  timings, so their ETAs are distance-proportional; requesting instruction
+  points would give the real speed profile along the road.
+- **Midpoint attribution as an option.** Miles are attributed forward from
+  each checkpoint (D6); the brief's half-way-to-each-neighbour convention is
+  a one-function change in `domain/aggregation.py` and could be a request
+  flag.
+- **Corridor grid.** The heatmap is sampled at checkpoints. A grid of points
+  either side of the route would show weather the truck drives *beside*,
+  at the cost of many more forecast lookups per route.
+- **Hours-of-service.** Mandatory rest breaks move every ETA after the first
+  stop; the risk at a checkpoint is only as good as the time you reach it.
+- **Vehicle profile.** Height, length and axle weight to the router, once a
+  product decision says where they come from.
+- **Smaller first paint.** Split MUI's icon and dialog imports out of the
+  initial bundle to cut the remaining ~350 ms of blocking time.
 
 ---
 
