@@ -13,6 +13,11 @@ ALLOWED_HOSTS = [
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
     if host.strip()
 ]
+# Render assigns the public hostname (and may suffix it when the name is
+# taken); it publishes it as RENDER_EXTERNAL_HOSTNAME, so trust that too.
+_render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if _render_host and _render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_host)
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
