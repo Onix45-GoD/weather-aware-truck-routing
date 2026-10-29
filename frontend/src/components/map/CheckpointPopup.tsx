@@ -45,8 +45,7 @@ export function CheckpointPopup({
             {checkpoint.distance_from_origin_miles.toFixed(0)}
           </Typography>
           <Typography variant="caption" component="p">
-            ETA {clockTime(checkpoint.eta, timeZone)} · this drives the
-            recommendation
+            ETA {clockTime(checkpoint.eta, timeZone)}
           </Typography>
         </div>
         <RiskChip level={checkpoint.risk.level} />
@@ -60,7 +59,7 @@ export function CheckpointPopup({
 
       <div>
         <Typography variant="caption" component="p" className="mb-1">
-          Next 48 h here · click an hour
+          Next 48 h
         </Typography>
         {series ? (
           <ol

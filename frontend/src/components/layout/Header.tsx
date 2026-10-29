@@ -1,14 +1,12 @@
-import CloudQueueIcon from '@mui/icons-material/CloudQueue'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutlined'
 import TuneIcon from '@mui/icons-material/Tune'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { useState } from 'react'
 
 import type { RouteAnalysisResponse } from '@/api/types'
-import { PALETTE } from '@/theme/theme'
 
 export interface HeaderProps {
   analysis: RouteAnalysisResponse | null
@@ -19,45 +17,36 @@ export interface HeaderProps {
 }
 
 export function Header({ analysis, onOpenTripForm, onOpenHelp }: HeaderProps) {
-  const providers = analysis?.meta.providers
+  // The logo is a static asset; if it is missing the title stands alone
+  // rather than showing a broken image.
+  const [logoFailed, setLogoFailed] = useState(false)
 
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-hairline bg-panel px-4 py-3">
+    <header className="flex items-center justify-between gap-3 border-b border-hairline bg-panel px-4 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
+        {!logoFailed && (
+          <img
+            src="/logo.png"
+            alt=""
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0 object-contain"
+            onError={() => setLogoFailed(true)}
+          />
+        )}
         <div className="min-w-0">
           <Typography variant="h1" className="truncate">
             Weather-Aware Truck Routing
           </Typography>
-          <Typography variant="caption" component="p" className="truncate">
-            {analysis
-              ? `${analysis.origin.label} → ${analysis.destination.label}`
-              : 'Plan a trip to see weather risk along every route option'}
-          </Typography>
+          {analysis && (
+            <Typography variant="caption" component="p" className="truncate">
+              {analysis.origin.label} → {analysis.destination.label}
+            </Typography>
+          )}
         </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {providers && (
-          <Tooltip
-            title={
-              `Routing: ${providers['routing']} · Weather: ${providers['weather']}` +
-              (analysis ? ` · analysed in ${Math.round(analysis.meta.elapsed_ms)} ms` : '')
-            }
-          >
-            <Chip
-              size="small"
-              icon={<CloudQueueIcon sx={{ fontSize: 15 }} />}
-              label={providers['weather'] ?? 'providers'}
-              sx={{
-                backgroundColor: PALETTE.elevated,
-                color: PALETTE.textSecondary,
-                border: `1px solid ${PALETTE.border}`,
-              }}
-              className="hidden sm:inline-flex"
-            />
-          </Tooltip>
-        )}
-
         <Tooltip title="How to read this dashboard">
           <IconButton size="small" aria-label="How to read this dashboard" onClick={onOpenHelp}>
             <HelpOutlineIcon />

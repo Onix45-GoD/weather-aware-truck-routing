@@ -64,14 +64,14 @@ describe('dashboard against a real API response', () => {
     // Route cards
     await waitFor(() =>
       expect(
-        screen.getByText(`Route alternatives (${real.routes.length})`),
+        screen.getByText(`Routes (${real.routes.length})`),
       ).toBeVisible(),
     )
 
     // Summary, checkpoint table, details, weather profile
     expect(screen.getByText('Total distance')).toBeVisible()
     expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
-    expect(screen.getByText(/corridor forecast/i)).toBeVisible()
+    expect(screen.getByText(/forecast timeline/i)).toBeVisible()
 
     // Map still mounted after data arrives
     expect(screen.getByTestId('map-container')).toHaveAttribute(

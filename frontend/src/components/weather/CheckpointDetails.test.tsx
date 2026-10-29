@@ -83,7 +83,7 @@ describe('CheckpointDetails', () => {
 
   it('says it is loading before the series exists', () => {
     renderDetails({ series: null })
-    expect(screen.getByText(/loading the hourly forecast/i)).toBeVisible()
+    expect(screen.getByText(/loading hourly forecast/i)).toBeVisible()
   })
 
   it('never renders an absent ETA measurement as zero', () => {

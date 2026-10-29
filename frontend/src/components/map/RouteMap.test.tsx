@@ -271,7 +271,7 @@ describe('map accessibility', () => {
 
   it('prompts when no route is selected', () => {
     renderMap({ selectedRouteId: null })
-    expect(screen.getByText(/select a route to see/i)).toBeVisible()
+    expect(screen.getByText(/select a route\./i)).toBeVisible()
   })
 })
 
@@ -341,13 +341,13 @@ describe('corridor forecast layers', () => {
   it('shows which hour the band represents', async () => {
     await mountedMap({ corridorLevels: levels, corridorLabel: '+12 h · Fri 6:00 PM MST' })
     expect(screen.getByTestId('corridor-badge')).toHaveTextContent('+12 h · Fri 6:00 PM MST')
-    expect(screen.getByText(/wide band & halos/i)).toBeVisible()
+    expect(screen.getByText(/band:/i)).toBeVisible()
   })
 
   it('draws no band and no badge without a frame', async () => {
     await mountedMap({ corridorLevels: null, corridorLabel: null })
     expect(screen.queryByTestId('corridor-badge')).not.toBeInTheDocument()
-    expect(screen.queryByText(/wide band & halos/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/band:/i)).not.toBeInTheDocument()
   })
 
   it('writes the frame to the sources without recreating the map', async () => {

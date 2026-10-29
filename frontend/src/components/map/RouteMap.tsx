@@ -228,7 +228,7 @@ function addRouteLayers(map: MapLibreMap): void {
         'line-color': [
           'case',
           ['get', 'isSelected'],
-          '#3B82F6',
+          '#FF8A1F',
           ['!', ['get', 'eligible']],
           '#A855F7',
           '#64748B',
@@ -296,13 +296,13 @@ function addRouteLayers(map: MapLibreMap): void {
       type: 'circle',
       source: SOURCES.checkpoints,
       filter: ['==', ['get', 'index'], -1],
-      // Blue, not white: the ring has to read on the light Streets basemap
-      // as well as on Dark. A faint fill keeps it visible over a dense dot.
+      // Brand orange: the selection colour everywhere else in the UI, and it
+      // reads on the light Streets basemap as well as on Dark.
       paint: {
         'circle-radius': 8,
-        'circle-color': 'rgba(37, 99, 235, 0.18)',
+        'circle-color': 'rgba(255, 138, 31, 0.2)',
         'circle-stroke-width': 2.5,
-        'circle-stroke-color': '#2563EB',
+        'circle-stroke-color': '#FF8A1F',
       },
     })
   }
@@ -666,8 +666,7 @@ export function RouteMap({
           className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-hairline bg-panel/90 px-3 py-1.5 text-xs backdrop-blur-sm"
           data-testid="corridor-badge"
         >
-          <span className="font-semibold text-ink">Forecast band</span>
-          <span className="text-muted"> · {corridorLabel}</span>
+          <span className="font-semibold text-ink">{corridorLabel}</span>
         </div>
       )}
 
@@ -724,16 +723,14 @@ function MapLegend({
       </ul>
       {!hasSelection && (
         <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
-          Select a route to see its checkpoints and risk colouring.
+          Select a route.
         </p>
       )}
       {hasCorridor && (
         // Two overlays, two meanings. The band is one instant across the
         // whole route; the dots are each checkpoint at its own ETA.
         <p className="m-0 mt-2 max-w-[13rem] text-[0.6875rem] leading-snug text-muted">
-          <strong>Wide band & halos:</strong> forecast at the selected hour.{' '}
-          <strong>Dots & dotted line:</strong> at each checkpoint's ETA. Click a
-          checkpoint for its weather.
+          <strong>Band:</strong> selected hour · <strong>Dots:</strong> at ETA
         </p>
       )}
     </div>

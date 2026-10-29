@@ -65,11 +65,10 @@ export function ForecastTimeline({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <Typography variant="h2" id={labelId}>
-            Corridor forecast
+            Forecast timeline
           </Typography>
           <Typography variant="caption" component="p">
-            Hours after departure. Moves only what the map and checkpoint
-            panel show — the route, ETAs and recommendation do not change.
+            Hours after departure · display only
           </Typography>
         </div>
 
@@ -114,7 +113,7 @@ export function ForecastTimeline({
         <div aria-live="polite">
           <LinearProgress aria-label="Loading corridor forecast" />
           <Typography variant="caption" component="p" className="mt-1">
-            Fetching the hourly forecast for every checkpoint…
+            Loading hourly forecast…
           </Typography>
         </div>
       )}
@@ -142,14 +141,9 @@ export function ForecastTimeline({
             <span className="text-muted"> · no forecast for this hour</span>
           )}
         </Typography>
-        {frames && (
+        {frames && unavailable > 0 && (
           <Typography variant="caption" component="span">
-            {corridor.data?.provider === 'open-meteo'
-              ? 'Open-Meteo hourly'
-              : `${corridor.data?.provider ?? ''} hourly`}
-            {unavailable > 0
-              ? ` · ${unavailable} of ${frames.length} hours unavailable`
-              : ` · all ${frames.length} hours available`}
+            {unavailable} of {frames.length} hours unavailable
           </Typography>
         )}
       </div>

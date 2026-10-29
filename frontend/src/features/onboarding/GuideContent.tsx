@@ -15,8 +15,10 @@ export function GuideContent() {
     <div className="flex flex-col gap-4">
       <ol className="m-0 grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-3">
         <Step n={1} title="Enter the trip">
-          Origin, destination, local departure time and zone, cargo weight,
-          and how often to sample the weather along the way.
+          Origin, destination, departure as local time in the zone you pick
+          (daylight saving is handled server-side), cargo weight — not gross
+          vehicle weight — and how often to sample the weather. The form is
+          remembered across refreshes.
         </Step>
         <Step n={2} title="Analyze">
           Up to three truck routes are fetched, the forecast is read at every
@@ -68,6 +70,10 @@ export function GuideContent() {
         <Term term="Click a checkpoint">
           Opens its weather on the map: conditions at ETA and a 48-hour risk
           strip for that spot. The panel below shows the full hourly table.
+        </Term>
+        <Term term="Times">
+          Estimated driving time only — no hours-of-service, fuel stops or
+          live traffic. Shown in the departure timezone.
         </Term>
       </dl>
     </div>

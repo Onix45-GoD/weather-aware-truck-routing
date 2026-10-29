@@ -14,30 +14,9 @@ import {
   riskMileSegments,
   worstCheckpoints,
 } from '@/features/routes/ranking'
-import {
-  averageRisk,
-  dateTime,
-  duration,
-  miles,
-  percent,
-  zoneAbbreviation,
-} from '@/lib/format'
+import { dateTime, miles, zoneAbbreviation } from '@/lib/format'
 import { riskStyle } from '@/theme/risk'
 import { PALETTE } from '@/theme/theme'
-
-function Stat({ value, label, color }: { value: string; label: string; color?: string | undefined }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span
-        className="text-xl font-semibold tabular-nums leading-none"
-        style={color ? { color } : undefined}
-      >
-        {value}
-      </span>
-      <span className="text-xs text-muted">{label}</span>
-    </div>
-  )
-}
 
 export interface RouteDetailProps {
   analysis: RouteAnalysisResponse
@@ -48,9 +27,9 @@ export interface RouteDetailProps {
 }
 
 /**
- * The selected route in depth: where it ranks and *why*, its headline
- * metrics, miles by risk level, the drive window, and the checkpoints that
- * threaten it most.
+ * The selected route in depth: where it ranks and *why*, miles by risk
+ * level, the drive window, and the checkpoints that threaten it most. The
+ * headline numbers live in the KPI strip under the header.
  *
  * Every number and every reason comes from the backend. The "why" sentence
  * is built from the criterion the ranking engine recorded, never from a
@@ -60,9 +39,6 @@ export function RouteDetail({ analysis, route, timeZone, onSelectCheckpoint }: R
   if (!route) {
     return (
       <Paper className="p-4">
-        <Typography variant="h2" className="mb-2">
-          Route detail
-        </Typography>
         <Typography variant="body2" color="text.secondary">
           Select a route in the comparison table or on the map.
         </Typography>
@@ -81,33 +57,30 @@ export function RouteDetail({ analysis, route, timeZone, onSelectCheckpoint }: R
 
   return (
     <Paper className="flex flex-col gap-4 p-4" aria-label={`Route detail: ${route.label}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Typography variant="h2">{route.label}</Typography>
-          <Chip size="small" label={`Rank ${route.rank} of ${analysis.routes.length}`} variant="outlined" />
-          {route.is_recommended && (
-            <Chip
-              size="small"
-              icon={<StarIcon sx={{ fontSize: 14 }} />}
-              label="Recommended"
-              sx={{ backgroundColor: PALETTE.success, color: '#06240F', fontWeight: 700 }}
-            />
-          )}
-          {blocked && (
-            <Chip
-              size="small"
-              icon={<BlockIcon sx={{ fontSize: 14 }} />}
-              label="Not usable"
-              sx={{
-                backgroundColor: 'transparent',
-                color: PALETTE.noTravel,
-                border: `1px dashed ${PALETTE.noTravel}`,
-                fontWeight: 700,
-              }}
-            />
-          )}
-        </div>
-        <Typography variant="caption">Route detail</Typography>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Typography variant="h2">{route.label}</Typography>
+        <Chip size="small" label={`Rank ${route.rank} of ${analysis.routes.length}`} variant="outlined" />
+        {route.is_recommended && (
+          <Chip
+            size="small"
+            icon={<StarIcon sx={{ fontSize: 14 }} />}
+            label="Recommended"
+            sx={{ backgroundColor: PALETTE.success, color: '#06240F', fontWeight: 700 }}
+          />
+        )}
+        {blocked && (
+          <Chip
+            size="small"
+            icon={<BlockIcon sx={{ fontSize: 14 }} />}
+            label="Not usable"
+            sx={{
+              backgroundColor: 'transparent',
+              color: PALETTE.noTravel,
+              border: `1px dashed ${PALETTE.noTravel}`,
+              fontWeight: 700,
+            }}
+          />
+        )}
       </div>
 
       <Alert
@@ -130,27 +103,6 @@ export function RouteDetail({ analysis, route, timeZone, onSelectCheckpoint }: R
           </>
         )}
       </Alert>
-
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-        <Stat value={miles(metrics.distance_miles)} label="Total distance" />
-        <Stat value={duration(metrics.duration_seconds)} label="Driving time" />
-        <Stat
-          value={miles(metrics.severe_miles, 0)}
-          label="Severe weather"
-          color={metrics.severe_miles > 0 ? PALETTE.severe : undefined}
-        />
-        <Stat
-          value={miles(metrics.high_miles, 0)}
-          label="High risk"
-          color={metrics.high_miles > 0 ? PALETTE.high : undefined}
-        />
-        <Stat value={averageRisk(metrics.average_risk)} label="Average risk" />
-        <Stat
-          value={percent(metrics.coverage_pct)}
-          label="Weather coverage"
-          color={metrics.coverage_pct < 100 ? PALETTE.warning : PALETTE.success}
-        />
-      </div>
 
       <div>
         <Typography variant="caption" component="p" className="mb-1">
@@ -204,10 +156,8 @@ export function RouteDetail({ analysis, route, timeZone, onSelectCheckpoint }: R
             {zone ? ` ${zone}` : ''}
           </Typography>
           <Typography variant="caption" component="p">
-            {route.checkpoints.length} checkpoints ·{' '}
-            {summary.eta_source === 'provider_segments'
-              ? 'ETAs from provider segment timings'
-              : 'ETAs assume a constant average speed (no provider timings)'}
+            {route.checkpoints.length} checkpoints
+            {summary.eta_source === 'distance_proportional' && ' · ETAs assume a constant average speed'}
           </Typography>
         </div>
 
@@ -217,7 +167,7 @@ export function RouteDetail({ analysis, route, timeZone, onSelectCheckpoint }: R
           </Typography>
           {worst.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
-              No checkpoint above Low on this route.
+              None above Low.
             </Typography>
           ) : (
             <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Worst checkpoints">
@@ -252,11 +202,6 @@ export function RouteDetail({ analysis, route, timeZone, onSelectCheckpoint }: R
           ))}
         </ul>
       )}
-
-      <Typography variant="caption" component="p">
-        Times are estimated driving time only. Driver hours-of-service, fuel
-        stops and live traffic are not modelled.
-      </Typography>
     </Paper>
   )
 }

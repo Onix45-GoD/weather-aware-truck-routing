@@ -42,9 +42,7 @@ describe('RouteDetail', () => {
     expect(screen.getByText('Rank 1 of 2')).toBeVisible()
     expect(screen.getByText('Recommended')).toBeVisible()
     expect(screen.getByTestId('route-why')).toHaveTextContent(analysis.recommendation_reason)
-    expect(screen.getByText('Total distance')).toBeVisible()
-    expect(screen.getByText('Driving time')).toBeVisible()
-    expect(screen.getByText(/no checkpoint above low/i)).toBeVisible()
+    expect(screen.getByText(/none above low/i)).toBeVisible()
   })
 
   it('explains a lower rank by the deciding criterion with both values', () => {

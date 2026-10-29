@@ -13,7 +13,7 @@ describe('OnboardingPanel', () => {
         <OnboardingPanel onExample={vi.fn()} onDismiss={vi.fn()} />
       </Providers>,
     )
-    expect(screen.getByText(/in three steps/i)).toBeVisible()
+    expect(screen.getByText('Three steps')).toBeVisible()
     expect(screen.getByText('Enter the trip')).toBeVisible()
     expect(screen.getByText('Analyze')).toBeVisible()
     expect(screen.getByText('Read the result')).toBeVisible()

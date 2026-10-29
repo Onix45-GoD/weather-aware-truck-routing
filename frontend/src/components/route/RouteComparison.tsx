@@ -49,8 +49,7 @@ export function RouteComparison({ analysis, selectedRouteId, onSelect }: RouteCo
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 py-3">
         <Typography variant="h2">Route comparison</Typography>
         <Typography variant="caption">
-          Ranked by Severe mi → High mi → avg risk → drive time. Outlined cell
-          = what decided that row.
+          Severe → High → avg risk → time · outlined cell decided the row
         </Typography>
       </div>
       <div className="overflow-x-auto">

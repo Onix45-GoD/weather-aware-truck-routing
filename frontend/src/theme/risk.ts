@@ -32,8 +32,10 @@ export const RISK_STYLES: Record<RiskLevel, RiskStyle> = {
   MODERATE: {
     label: 'Moderate',
     description: 'Moderate risk',
-    color: '#F59E0B',
-    soft: 'rgba(245, 158, 11, 0.16)',
+    // Yellower than the brand orange, so a Moderate chip is never mistaken
+    // for a selected control.
+    color: '#EAB308',
+    soft: 'rgba(234, 179, 8, 0.16)',
     contrastText: '#2A1A00',
   },
   HIGH: {

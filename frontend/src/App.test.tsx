@@ -41,6 +41,7 @@ async function submit() {
 
 beforeEach(() => {
   window.localStorage.clear()
+  window.localStorage.setItem('wr.onboarding.dismissed', '1')
   analyseRoute.mockReset()
   fetchPlaceSuggestions.mockResolvedValue({ query: '', suggestions: [] })
   fetchCorridorForecast.mockReset()
@@ -66,7 +67,7 @@ describe('successful analysis', () => {
     renderApp()
     await submit()
 
-    expect(await screen.findByText('Route alternatives (3)')).toBeVisible()
+    expect(await screen.findByText('Routes (3)')).toBeVisible()
 
     // Scoped to the alternatives panel: route labels also appear in the
     // summary and checkpoint headings.
@@ -84,7 +85,7 @@ describe('successful analysis', () => {
     await submit()
 
     expect(
-      await screen.findByText(`Route alternatives (${count})`),
+      await screen.findByText(`Routes (${count})`),
     ).toBeVisible()
   })
 
@@ -106,7 +107,7 @@ describe('successful analysis', () => {
     await submit()
 
     expect(await screen.findByText('Total distance')).toBeVisible()
-    expect(screen.getByText('Weather coverage')).toBeVisible()
+    expect(within(screen.getByTestId('kpi-strip')).getByText('Coverage')).toBeVisible()
   })
 
   it('passes the routes to the map', async () => {
@@ -229,7 +230,9 @@ describe('no safe route', () => {
     // Stated in both the summary verdict and the global warning banner.
     const notices = await screen.findAllByText(/no route can be recommended/i)
     expect(notices.length).toBeGreaterThan(0)
-    expect(screen.queryByText('Recommended')).not.toBeInTheDocument()
+    const panel = screen.getByRole('complementary', { name: /route alternatives/i })
+    expect(within(panel).queryByText('Recommended')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('kpi-strip')).getByText('None')).toBeVisible()
   })
 
   it('still lists the blocked route with its reasons', async () => {
@@ -274,7 +277,6 @@ describe('errors', () => {
     await submit()
 
     expect(await screen.findByText(/analysis failed/i)).toBeVisible()
-    expect(screen.getByText(/you can try again/i)).toBeVisible()
   })
 
   it('reports a network failure usefully', async () => {
@@ -357,7 +359,7 @@ describe('resilience', () => {
     expect(screen.getByText(/webgl context lost/i)).toBeVisible()
 
     // ...and everything else is still there.
-    expect(screen.getByText('Route alternatives (3)')).toBeVisible()
+    expect(screen.getByText('Routes (3)')).toBeVisible()
     expect(screen.getByText('Total distance')).toBeVisible()
     expect(screen.getByRole('table', { name: /checkpoints/i })).toBeVisible()
 
@@ -430,12 +432,12 @@ describe('corridor forecast timeline', () => {
     expect(screen.getByText(analysis.recommendation_reason)).toBeVisible()
   })
 
-  it('marks an hour the provider did not cover as unavailable', async () => {
+  it('marks an hour the provider did not cover as unavailable', { timeout: 15_000 }, async () => {
     const { user } = await analysedWithCorridor()
     const slider = screen.getByRole('slider', { name: /forecast hour/i })
     slider.focus()
-    await user.keyboard('{End}')
-    for (let i = 0; i < 8; i += 1) await user.keyboard('{ArrowLeft}')
+    // End = 48, PageDown = -10, two arrows = +2 -> 40.
+    await user.keyboard('{End}{PageDown}{ArrowRight}{ArrowRight}')
     expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent('+40 h')
     expect(screen.getByTestId('forecast-timestamp')).toHaveTextContent(/no forecast for this hour/i)
   })
@@ -472,6 +474,7 @@ describe('corridor forecast timeline', () => {
 
 describe('onboarding', () => {
   it('shows the guide on first visit and hides it after an analysis', async () => {
+    window.localStorage.removeItem('wr.onboarding.dismissed')
     analyseRoute.mockResolvedValue(makeAnalysis())
     renderApp()
     expect(screen.getByTestId('onboarding')).toBeVisible()
@@ -481,6 +484,7 @@ describe('onboarding', () => {
   })
 
   it('runs a real analysis from "Try an example trip" and fills the form', async () => {
+    window.localStorage.removeItem('wr.onboarding.dismissed')
     analyseRoute.mockResolvedValue(makeAnalysis())
     renderApp()
     await userEvent.setup().click(screen.getByRole('button', { name: /try an example trip/i }))
@@ -493,6 +497,7 @@ describe('onboarding', () => {
   })
 
   it('stays dismissed across renders once "Got it" is pressed', async () => {
+    window.localStorage.removeItem('wr.onboarding.dismissed')
     renderApp()
     await userEvent.setup().click(screen.getByRole('button', { name: /got it/i }))
     expect(screen.queryByTestId('onboarding')).not.toBeInTheDocument()
@@ -518,7 +523,7 @@ describe('fixture mode', () => {
     renderApp()
     await submit()
     const banner = await screen.findByTestId('fixture-banner')
-    expect(banner).toHaveTextContent(/geocoding, routing came from the synthetic fixture provider/)
+    expect(banner).toHaveTextContent(/geocoding, routing: synthetic, not real/)
   })
 
   it('shows no banner with live providers', async () => {

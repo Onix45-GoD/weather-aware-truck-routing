@@ -18,8 +18,8 @@
 
 @layer vendor {
   .maplibregl-ctrl-group {
-    background: #111c2d;
-    border: 1px solid #29384d;
+    background: #15181d;
+    border: 1px solid #262b33;
     border-radius: 10px;
     overflow: hidden;
   }
@@ -29,11 +29,11 @@
   }
 
   .maplibregl-ctrl-group button + button {
-    border-top: 1px solid #29384d;
+    border-top: 1px solid #262b33;
   }
 
   .maplibregl-ctrl-group button:hover {
-    background: #1a2a40;
+    background: #1d2127;
   }
 
   .maplibregl-ctrl-group button span {
@@ -43,49 +43,49 @@
   /* Attribution is a condition of using the free basemap tiles. It is
    * restyled for contrast, never hidden. */
   .maplibregl-ctrl-attrib {
-    background: rgba(17, 28, 45, 0.85);
-    color: #94a3b8;
+    background: rgba(21, 24, 29, 0.88);
+    color: #9aa3b2;
     font-size: 11px;
     border-radius: 6px;
   }
 
   .maplibregl-ctrl-attrib a {
-    color: #94a3b8;
+    color: #9aa3b2;
   }
 
   .maplibregl-ctrl-scale {
-    background: rgba(17, 28, 45, 0.85);
-    border-color: #29384d;
-    color: #94a3b8;
+    background: rgba(21, 24, 29, 0.88);
+    border-color: #262b33;
+    color: #9aa3b2;
     border-radius: 4px;
   }
 
   .maplibregl-popup-content {
-    background: #111c2d;
-    border: 1px solid #29384d;
+    background: #15181d;
+    border: 1px solid #262b33;
     border-radius: 10px;
-    color: #f1f5f9;
+    color: #f3f4f6;
     font-size: 12px;
     padding: 10px 12px;
   }
 
   .maplibregl-popup-tip {
-    border-top-color: #111c2d;
-    border-bottom-color: #111c2d;
+    border-top-color: #15181d;
+    border-bottom-color: #15181d;
   }
 
   /* The popup inherits the dark panel; MapLibre's default close glyph is
    * near-black and would vanish on it. */
   .maplibregl-popup-close-button {
-    color: #94a3b8;
+    color: #9aa3b2;
     font-size: 18px;
     padding: 0 6px;
     line-height: 1.2;
   }
 
   .maplibregl-popup-close-button:hover {
-    background: #1a2a40;
-    color: #f1f5f9;
+    background: #1d2127;
+    color: #f3f4f6;
   }
 
   .checkpoint-popup .maplibregl-popup-content {

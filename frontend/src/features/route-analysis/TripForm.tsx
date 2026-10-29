@@ -3,11 +3,15 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 
 import { CHECKPOINT_INTERVALS, type RouteAnalysisRequest } from '@/api/types'
 import { PlaceField } from '@/features/places/PlaceField'
-import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones'
+import { timezoneOptions } from '@/lib/timezones'
+import { PALETTE } from '@/theme/theme'
+
+import { defaultTripValues } from './tripDefaults'
+import { clearStoredTrip, loadStoredTrip, storeTrip } from './tripStorage'
 
 export interface TripFormValues {
   origin: string
@@ -24,18 +28,8 @@ export interface TripFormProps {
   isLoading: boolean
   /** Field-level errors returned by the API, keyed by request field name. */
   fieldErrors?: Record<string, string[]> | undefined
+  /** Overrides both the defaults and the remembered trip. */
   initialValues?: Partial<TripFormValues> | undefined
-}
-
-function defaultDeparture(): string {
-  const when = new Date(Date.now() + 2 * 60 * 60 * 1000)
-  when.setMinutes(0, 0, 0)
-  // `toISOString` would convert to UTC; we want the *local* wall clock.
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return (
-    `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}` +
-    `T${pad(when.getHours())}:${pad(when.getMinutes())}`
-  )
 }
 
 const LOCAL_ERRORS = {
@@ -51,18 +45,18 @@ export function TripForm({
   fieldErrors = {},
   initialValues,
 }: TripFormProps) {
+  // Precedence: explicit seed (the example trip) > what the user typed last
+  // time (survives a refresh) > defaults.
   const [values, setValues] = useState<TripFormValues>(() => ({
-    origin: 'Denver, CO',
-    destination: 'Chicago, IL',
-    departureLocal: defaultDeparture(),
-    // A US trucking tool defaults to a US zone -- the one the default
-    // origin is in -- not to wherever the browser happens to be.
-    departureTimezone: DEFAULT_TIMEZONE,
-    loadWeightLb: '40000',
-    checkpointIntervalMiles: 25,
+    ...defaultTripValues(),
+    ...loadStoredTrip(),
     ...initialValues,
   }))
   const [touched, setTouched] = useState(false)
+
+  useEffect(() => {
+    storeTrip(values)
+  }, [values])
 
   const zones = useMemo(() => timezoneOptions(), [])
 
@@ -101,6 +95,12 @@ export function TripForm({
     value: TripFormValues[K],
   ) => setValues((previous) => ({ ...previous, [key]: value }))
 
+  const reset = () => {
+    clearStoredTrip()
+    setValues(defaultTripValues())
+    setTouched(false)
+  }
+
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     setTouched(true)
@@ -137,15 +137,12 @@ export function TripForm({
       />
 
       <TextField
-        label="Departure date & time"
+        label="Departure"
         type="datetime-local"
         value={values.departureLocal}
         onChange={(event) => update('departureLocal', event.target.value)}
         error={Boolean(errorFor('departureLocal', 'departure_at'))}
-        helperText={
-          errorFor('departureLocal', 'departure_at') ||
-          'Local time in the timezone below'
-        }
+        helperText={errorFor('departureLocal', 'departure_at') || undefined}
         fullWidth
         size="small"
         slotProps={{ inputLabel: { shrink: true } }}
@@ -153,16 +150,14 @@ export function TripForm({
 
       <TextField
         select
-        label="Departure timezone"
+        label="Timezone"
         value={values.departureTimezone}
         onChange={(event) => update('departureTimezone', event.target.value)}
         error={Boolean(fieldErrors['departure_timezone']?.[0])}
-        helperText={
-          fieldErrors['departure_timezone']?.[0] ??
-          'Daylight saving is applied by the server'
-        }
+        helperText={fieldErrors['departure_timezone']?.[0]}
         fullWidth
         size="small"
+        slotProps={{ htmlInput: { 'aria-label': 'Departure timezone' } }}
       >
         {zones.map((zone) => (
           <MenuItem key={zone.value} value={zone.value}>
@@ -177,10 +172,7 @@ export function TripForm({
         value={values.loadWeightLb}
         onChange={(event) => update('loadWeightLb', event.target.value)}
         error={Boolean(errorFor('loadWeightLb', 'load_weight_lb'))}
-        helperText={
-          errorFor('loadWeightLb', 'load_weight_lb') ||
-          'Cargo only — not gross vehicle weight'
-        }
+        helperText={errorFor('loadWeightLb', 'load_weight_lb') || undefined}
         fullWidth
         size="small"
         slotProps={{ htmlInput: { min: 1, max: 200000, step: 500 } }}
@@ -188,14 +180,13 @@ export function TripForm({
 
       <TextField
         select
-        label="Checkpoint interval"
+        label="Checkpoint every"
         value={values.checkpointIntervalMiles}
         onChange={(event) =>
           update('checkpointIntervalMiles', Number(event.target.value))
         }
         fullWidth
         size="small"
-        helperText="How often weather is sampled along the route"
       >
         {CHECKPOINT_INTERVALS.map((interval) => (
           <MenuItem key={interval} value={interval}>
@@ -217,8 +208,23 @@ export function TripForm({
           )
         }
         fullWidth
+        sx={{
+          background: PALETTE.brandGradient,
+          color: '#1A0E00',
+          '&.Mui-disabled': { background: PALETTE.elevated, color: PALETTE.textSecondary },
+        }}
       >
         {isLoading ? 'Analysing…' : 'Analyze Routes'}
+      </Button>
+
+      <Button
+        type="button"
+        variant="text"
+        size="small"
+        onClick={reset}
+        sx={{ alignSelf: 'flex-start', color: PALETTE.textSecondary, minHeight: 0 }}
+      >
+        Reset
       </Button>
     </form>
   )

@@ -20,16 +20,17 @@
  * These tokens generate utilities (`bg-app`, `text-muted`, `border-hairline`)
  * and are the same values the MUI theme uses, declared once. */
 @theme {
-  --color-app: #08111f;
-  --color-panel: #111c2d;
-  --color-elevated: #1a2a40;
-  --color-hairline: #29384d;
+  --color-app: #0b0d10;
+  --color-panel: #15181d;
+  --color-elevated: #1d2127;
+  --color-hairline: #262b33;
+  --color-brand: #ff8a1f;
 
-  --color-ink: #f1f5f9;
-  --color-muted: #94a3b8;
+  --color-ink: #f3f4f6;
+  --color-muted: #9aa3b2;
 
   --color-risk-low: #22c55e;
-  --color-risk-moderate: #f59e0b;
+  --color-risk-moderate: #eab308;
   --color-risk-high: #f97316;
   --color-risk-severe: #ef4444;
   --color-risk-no-travel: #a855f7;

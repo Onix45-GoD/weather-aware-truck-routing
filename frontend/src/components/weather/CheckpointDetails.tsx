@@ -88,7 +88,7 @@ export function CheckpointDetails({
           Checkpoint
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Select a checkpoint on the map or in the table to see its forecast.
+          Select a checkpoint on the map or in the table.
         </Typography>
       </Paper>
     )
@@ -171,7 +171,7 @@ export function CheckpointDetails({
 
       <div>
         <Typography variant="caption" component="p" className="mb-1">
-          Next 48 h here · Open-Meteo hourly · click a row to move the timeline
+          Next 48 h
         </Typography>
         {series ? (
           <div className="scroll-area max-h-[16rem] rounded-lg border border-hairline">
@@ -201,7 +201,7 @@ export function CheckpointDetails({
           </div>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            Loading the hourly forecast…
+            Loading hourly forecast…
           </Typography>
         )}
       </div>

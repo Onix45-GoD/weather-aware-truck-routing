@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Providers } from '@/app/Providers'
 
@@ -18,12 +18,16 @@ function renderForm(props: Partial<Parameters<typeof TripForm>[0]> = {}) {
 
 const submitButton = () => screen.getByRole('button', { name: /analyze routes/i })
 
+beforeEach(() => {
+  window.localStorage.clear()
+})
+
 describe('TripForm accessibility', () => {
   it('labels every input', () => {
     renderForm()
     expect(screen.getByLabelText(/^origin$/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/^destination$/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/departure date/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^departure$/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/cargo weight/i)).toBeInTheDocument()
   })
 
@@ -34,7 +38,7 @@ describe('TripForm accessibility', () => {
 
   it('defaults the departure timezone to a US zone, not the browser zone', () => {
     renderForm()
-    expect(screen.getByRole('combobox', { name: /departure timezone/i })).toHaveTextContent('America/Denver')
+    expect(screen.getByRole('combobox', { name: /timezone/i })).toHaveTextContent('America/Denver')
   })
 
   it('can be submitted from the keyboard', async () => {

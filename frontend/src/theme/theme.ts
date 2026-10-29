@@ -16,19 +16,27 @@
 
 import { createTheme, type ThemeOptions } from '@mui/material/styles'
 
+/**
+ * Charcoal ground, brand orange for controls. The risk palette (`risk.ts`)
+ * is separate on purpose: orange on a *control* means selected, orange on
+ * *data* means High risk, and the two never share a surface -- controls
+ * never carry risk colours and risk colours never style chrome.
+ */
 export const PALETTE = {
-  appBackground: '#08111F',
-  panel: '#111C2D',
-  elevated: '#1A2A40',
-  primary: '#3B82F6',
+  appBackground: '#0B0D10',
+  panel: '#15181D',
+  elevated: '#1D2127',
+  primary: '#FF8A1F',
+  /** Logo gradient, for the one primary action. */
+  brandGradient: 'linear-gradient(135deg, #FFB300 0%, #FF6A00 100%)',
   success: '#22C55E',
-  warning: '#F59E0B',
+  warning: '#EAB308',
   high: '#F97316',
   severe: '#EF4444',
   noTravel: '#A855F7',
-  textPrimary: '#F1F5F9',
-  textSecondary: '#94A3B8',
-  border: '#29384D',
+  textPrimary: '#F3F4F6',
+  textSecondary: '#9AA3B2',
+  border: '#262B33',
 } as const
 
 const FONT_STACK = [
@@ -49,7 +57,7 @@ const options: ThemeOptions = {
   palette: {
     mode: 'dark',
     background: { default: PALETTE.appBackground, paper: PALETTE.panel },
-    primary: { main: PALETTE.primary, contrastText: '#F8FAFC' },
+    primary: { main: PALETTE.primary, contrastText: '#1A0E00' },
     success: { main: PALETTE.success },
     warning: { main: PALETTE.warning },
     error: { main: PALETTE.severe },
@@ -103,7 +111,7 @@ const options: ThemeOptions = {
           fontSize: '0.875rem',
           '& .MuiOutlinedInput-notchedOutline': { borderColor: PALETTE.border },
           '&:hover .MuiOutlinedInput-notchedOutline': {
-            borderColor: '#3A4D68',
+            borderColor: '#3A414B',
           },
         },
         input: { fontVariantNumeric: 'tabular-nums' },

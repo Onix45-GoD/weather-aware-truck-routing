@@ -14,6 +14,7 @@ import { useCallback, useMemo, useState } from 'react'
 import type { RiskLevel, RouteAnalysisRequest } from '@/api/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Header } from '@/components/layout/Header'
+import { KpiStrip } from '@/components/layout/KpiStrip'
 import { CheckpointPopup } from '@/components/map/CheckpointPopup'
 import { LazyRouteMap } from '@/components/map/LazyRouteMap'
 import { RouteCard } from '@/components/route/RouteCard'
@@ -193,6 +194,7 @@ export default function App() {
           onOpenTripForm={() => setTripOpen(true)}
           onOpenHelp={() => setHelpOpen(true)}
         />
+        {data && <KpiStrip analysis={data} route={selectedRoute} />}
         {isLoading && <LinearProgress />}
 
         <main id="results" className="scroll-area flex-1 p-3" tabIndex={-1}>
@@ -202,7 +204,7 @@ export default function App() {
             <aside className="hidden min-w-0 lg:block">
               <Paper className="p-4">
                 <Typography variant="h2" className="mb-4">
-                  Trip details
+                  Trip
                 </Typography>
                 {tripForm}
               </Paper>
@@ -220,9 +222,8 @@ export default function App() {
               {fixtureProviders.length > 0 && (
                 <Alert severity="warning" variant="filled" data-testid="fixture-banner">
                   <AlertTitle>Offline fixture data</AlertTitle>
-                  {fixtureProviders.join(', ')} came from the synthetic fixture
-                  provider. These routes and this weather are not real; configure
-                  the live providers before relying on anything shown.
+                  {fixtureProviders.join(', ')}: synthetic, not real. Configure the
+                  live providers before relying on this.
                 </Alert>
               )}
 
@@ -237,7 +238,6 @@ export default function App() {
                       : 'Analysis failed'}
                   </AlertTitle>
                   {error.message}
-                  {error.isRetryable && ' You can try again.'}
                 </Alert>
               )}
 
@@ -312,15 +312,14 @@ export default function App() {
               className="flex min-w-0 flex-col gap-3"
             >
               <Typography variant="h2">
-                Route alternatives
+                Routes
                 {data ? ` (${data.routes.length})` : ''}
               </Typography>
 
               {!data && status !== 'loading' && (
                 <Paper className="p-4">
                   <Typography variant="body2" color="text.secondary">
-                    Enter a trip and select <strong>Analyze Routes</strong> to
-                    compare up to three options by weather risk.
+                    Enter a trip and select <strong>Analyze Routes</strong>.
                   </Typography>
                 </Paper>
               )}
@@ -379,7 +378,7 @@ export default function App() {
         slotProps={{ paper: { sx: { width: 320, p: 2 } } }}
       >
         <Typography variant="h2" className="mb-4">
-          Trip details
+          Trip
         </Typography>
         {tripForm}
       </Drawer>

@@ -73,9 +73,7 @@ describe('ForecastTimeline', () => {
 
   it('says what the slider changes and what it does not', () => {
     renderTimeline(ready())
-    expect(
-      screen.getByText(/route, ETAs and recommendation do not change/i),
-    ).toBeVisible()
+    expect(screen.getByText(/display only/i)).toBeVisible()
   })
 
   it('reports the hour via keyboard', async () => {

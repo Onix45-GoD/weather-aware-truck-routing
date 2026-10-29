@@ -27,11 +27,10 @@ export function OnboardingPanel({ onExample, onDismiss, exampleLoading = false }
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <Typography variant="h2" id={titleId}>
-            Weather-aware truck routing, in three steps
+            Three steps
           </Typography>
           <Typography variant="caption" component="p">
-            Compare up to three routes by the weather you would actually drive
-            through, hour by hour.
+            Up to three truck routes, ranked by the weather you would drive through.
           </Typography>
         </div>
         <div className="flex gap-2">

@@ -69,6 +69,6 @@ describe('RouteComparison', () => {
 
   it('states the ranking rule in the header', () => {
     renderTable()
-    expect(screen.getByText(/Ranked by Severe mi → High mi → avg risk → drive time/)).toBeVisible()
+    expect(screen.getByText(/Severe → High → avg risk → time/)).toBeVisible()
   })
 })
